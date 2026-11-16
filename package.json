@@ -5,7 +5,7 @@
  "type": "module",
  "main": "server.ts",
  "scripts": {
-  "dev": "nodemon --watch . -e js,ts,json --exec \"ts-node server.ts\"",
+  "dev": "nodemon --watch . -e js,ts,json --exec \"tsx watch server.ts\"",
   "build": "tsup server.ts --format cjs --clean",
   "start": "node dist/server.js"
  },
@@ -21,6 +21,7 @@
   "@types/node": "^20.11.7",
   "ts-node": "^10.9.2",
   "tsup": "^8.0.1",
+  "tsx": "^4.23.15",
   "typescript": "^5.3.3"
  }
 }
