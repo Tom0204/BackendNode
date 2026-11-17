@@ -1,7 +1,6 @@
+import { env } from './src/config/environment'
 import app from './src/app'
 
-const PORT = 4001
-
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`)
+app.listen(env.PORT, () => {
+    console.log(`Server is running on http://localhost:${env.PORT}`)
 })
