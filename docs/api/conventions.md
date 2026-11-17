@@ -281,6 +281,13 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
   - un code correspond à une seule cause ;
   - un même code pour une ressource inexistante et une ressource inaccessible.
 
+### 6.3 Codes métier en usage
+
+| Code | Statut | Endpoints | Ticket |
+|---|---|---|---|
+| `USER_NOT_FOUND` | 404 | `GET`, `PUT`, `PATCH`, `DELETE /users/:id` | FND-03 |
+| `EMAIL_ALREADY_USED` | 409 | `POST /users`, `PUT /users/:id`, `PATCH /users/:id` | FND-03 |
+
 ## 7. Identifiants et autorisations
 
 - **Dans l'API**, un identifiant est une **chaîne opaque** : le client la stocke et la renvoie, sans jamais l'interpréter ni la construire.
@@ -396,7 +403,7 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 
 | Non-conformité actuelle | Ticket prévu |
 |---|---|
-| Erreurs au format `{ "error": "..." }`, route inconnue en HTML | FND-03 |
+| Erreurs au format `{ "error": "..." }`, route inconnue en HTML | Réalisé FND-03 |
 | Validation des paramètres et du corps | FND-04 |
 | Routes sans préfixe `/api/v1`, réponses sans enveloppe, route `GET /` | FND-07 |
 | Identifiants numériques, accès sans autorisation | DB-04, AUTH-02 |
@@ -406,3 +413,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | Date | Changement |
 |---|---|
 | 2026-11-17 | Adoption des conventions (SET-05) |
+| 2026-11-17 | Codes métier USER_NOT_FOUND et EMAIL_ALREADY_USED (FND-03) |

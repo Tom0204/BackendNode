@@ -12,8 +12,8 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet
 | Configuration TypeScript (additionnel) | Validé | `4450c2d` |
 | FND-01 | Validé (points du travail réaffectés, voir plus bas) | `4450c2d` |
 | FND-02 | Validé | `818a426` |
-| SET-01 | Livré avec SET-05, en attente de validation | — |
-| SET-05 | Livré, en attente de validation | — |
+| SET-01 | Validé | `818a426` |
+| SET-05 | Validé | `13e50ef` |
 
 ## Ordre de réalisation
 
@@ -44,6 +44,10 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | SET-01 | Le livrable `docs/architecture/current-state.md` est rédigé dans le cadre de SET-05 ; il décrit l'état au commit `818a426`. | L'audit avait d'abord été rendu dans la conversation, sans document dans le dépôt. | — |
 | SET-01 | Les endpoints ont été appelés avec `curl` et non avec Postman. | Aucune collection Postman n'existe encore. | DOC-01 |
 | SET-01, SET-05 | Aucun test automatisé ni requête Postman. | Tickets de documentation uniquement, sans modification du code. | — |
+| FND-03 | Le format d'erreur s'applique aux routes `/users` existantes : les erreurs passent de `{ "error": "..." }` à l'enveloppe de SET-05. | Critère « Toutes les erreurs API suivent le format défini dans SET-05 ». Changement cassant admis : aucun client. | — |
+| FND-03 | Les erreurs de validation des services renvoient `VALIDATION_ERROR` avec un `details` vide. | La réponse 400 structurée par champ relève de FND-04. | FND-04 |
+| FND-03 | Seuls les 415 produits par `express.json()` (jeu de caractères non pris en charge) sont formatés ; le rejet d'un corps envoyé dans un autre format que JSON n'est pas implémenté. | Contrôle du type de contenu rattaché à FND-08 (précisions SET-05). | FND-08 |
+| FND-03 | Aucun test automatisé ni requête Postman ; vérification manuelle. | FND-06 et DOC-01 ne sont pas réalisés. | FND-06 (prévoit des tests de route inconnue, de validation et d'erreur applicative) |
 
 ## Écarts introduits par SET-05 (conventions de l'API)
 
@@ -95,4 +99,4 @@ Règles du backlog conservées sans changement :
 - **FND-09 — Gérer les erreurs de démarrage du serveur** (P1, dépendances : FND-01, FND-02). Gestion de l'événement `error` de `listen` (port occupé, accès refusé), message explicite et arrêt avec code 1. Hors périmètre : logger (FND-05), erreurs de base (DB-01), arrêt propre (QUAL-06). Modifie uniquement `server.ts`.
 - **Correction des bugs HTTP identifiés à l'audit** : prévue après FND-06, pour être couverte par des tests.
   - Restent à traiter : PATCH `/users/:id` avec un `name` valide refusé en 400, identifiant non numérique renvoyant 404.
-  - Le JSON invalide renvoyant 500 et la route inconnue renvoyant une page HTML relèvent de FND-03.
+  - Le JSON invalide renvoyant 500 et la route inconnue renvoyant une page HTML sont traités par FND-03.

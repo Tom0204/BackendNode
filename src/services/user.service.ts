@@ -1,15 +1,15 @@
 import { userRepository } from '../repositories/user.repository'
-import { HttpError } from '../utils/http-error'
+import { conflict, notFound, validationError } from '../utils/http-error'
 import { isNonEmptyString } from '../utils/validators'
 import { User } from '../types/user'
 
-const notFound = () => new HttpError(404, 'User not found')
-const emailTaken = () => new HttpError(409, 'Email already taken')
+const userNotFound = () => notFound('USER_NOT_FOUND', 'User not found')
+const emailTaken = () => conflict('EMAIL_ALREADY_USED', 'Email already taken')
 
 function getById(id: number): User {
     const user = userRepository.findById(id)
     if (!user) {
-        throw notFound()
+        throw userNotFound()
     }
     return user
 }
@@ -20,7 +20,7 @@ export const userService = {
     create(body: any): User {
         const { name, email } = body ?? {}
         if (!isNonEmptyString(name) || !isNonEmptyString(email)) {
-            throw new HttpError(400, 'Name and email are required')
+            throw validationError('Name and email are required')
         }
         if (userRepository.findByEmail(email)) {
             throw emailTaken()
@@ -32,7 +32,7 @@ export const userService = {
         getById(id)
         const { name, email } = body ?? {}
         if (!isNonEmptyString(name) || !isNonEmptyString(email)) {
-            throw new HttpError(400, 'Name and email are required')
+            throw validationError('Name and email are required')
         }
         const existing = userRepository.findByEmail(email)
         if (existing && existing.id !== id) {
@@ -46,14 +46,14 @@ export const userService = {
         const { name, email } = body ?? {}
 
         if (name !== undefined && !isNonEmptyString(name)) {
-            throw new HttpError(400, 'Name must be a non-empty string')
+            throw validationError('Name must be a non-empty string')
         }
         if (name !== undefined && isNonEmptyString(name)) {
-            throw new HttpError(400, 'Email must be a non-empty string')
+            throw validationError('Email must be a non-empty string')
         }
         if (email !== undefined) {
             if (!isNonEmptyString(email)) {
-                throw new HttpError(400, 'Email must be a non-empty string')
+                throw validationError('Email must be a non-empty string')
             }
             const existingUser = userRepository.findByEmail(email)
             if (existingUser && existingUser.id !== id) {
@@ -66,7 +66,7 @@ export const userService = {
 
     remove(id: number): void {
         if (!userRepository.delete(id)) {
-            throw notFound()
+            throw userNotFound()
         }
     }
 }

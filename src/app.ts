@@ -1,7 +1,7 @@
-import express, {NextFunction, Request, Response} from 'express'
+import express from 'express'
 import cors from 'cors'
 import routes from './routes'
-import { HttpError } from './utils/http-error'
+import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
 
 const app = express()
 
@@ -14,12 +14,7 @@ app.get('/', (req, res) => {
 
 app.use(routes)
 
-app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
-    if (err instanceof HttpError) {
-        return res.status(err.status).json({ error: err.message })
-    }
-    console.error(err)
-    res.status(500).json({ error: 'Internal Server Error' })
-})
+app.use(notFoundHandler)
+app.use(errorHandler)
 
 export default app
