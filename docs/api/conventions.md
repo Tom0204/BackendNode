@@ -120,6 +120,7 @@ Un succès sans contenu à renvoyer, comme une suppression, répond **204 sans c
 
 - Une réponse d'erreur ne contient jamais de champ `data`.
 - `field` désigne le chemin du champ en notation pointée : `name`, `items.0.quantity`, `pageSize`.
+- Pour une erreur qui porte sur un emplacement entier (un corps qui n'est pas un objet, par exemple), \ field` vaut le nom de l’emplacement : `body`, `query` ou `params`.`
 
 ### 4.2 Exemples
 
@@ -404,7 +405,7 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | Non-conformité actuelle | Ticket prévu |
 |---|---|
 | Erreurs au format `{ "error": "..." }`, route inconnue en HTML | Réalisé FND-03 |
-| Validation des paramètres et du corps | FND-04 |
+| Validation des paramètres et du corps | Réalisé pour \/users` (FND-04) |`
 | Routes sans préfixe `/api/v1`, réponses sans enveloppe, route `GET /` | FND-07 |
 | Identifiants numériques, accès sans autorisation | DB-04, AUTH-02 |
 
@@ -414,3 +415,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 |---|---|
 | 2026-11-17 | Adoption des conventions (SET-05) |
 | 2026-11-17 | Codes métier USER_NOT_FOUND et EMAIL_ALREADY_USED (FND-03) |
+| 2026-11-17 | Champ \field` d’une erreur portant sur un emplacement entier (FND-04) |`

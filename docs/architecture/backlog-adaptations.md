@@ -14,13 +14,15 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet
 | FND-02 | Validé | `818a426` |
 | SET-01 | Validé | `818a426` |
 | SET-05 | Validé | `13e50ef` |
+| FND-03 | Validé | `f537454` |
+| FND-04 | Livré, en attente de validation | — |
 
 ## Ordre de réalisation
 
 L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a été adapté :
 
 1. FND-01 et FND-02 ont été réalisés avant SET-02, SET-03, SET-04 et SET-05, car ils ne dépendent que de SET-01.
-2. Ordre retenu ensuite : SET-05 (avec la clôture de SET-01) → FND-03 → FND-04 → FND-06 → correction des bugs HTTP → FND-07 → FND-09, FND-05, FND-08.
+2. Ordre retenu ensuite : SET-05 (avec la clôture de SET-01) → FND-03 → FND-04 → FND-06 → FND-07 → FND-09, FND-05, FND-08.
 3. SET-02, SET-03 et SET-04 ne sont pas encore réalisés. Ils doivent l'être avant leurs tickets dépendants :
    - SET-04 avant DB-01 ;
    - SET-02 et SET-03 avant DB-02 et les tickets de gameplay.
@@ -48,6 +50,12 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | FND-03 | Les erreurs de validation des services renvoient `VALIDATION_ERROR` avec un `details` vide. | La réponse 400 structurée par champ relève de FND-04. | FND-04 |
 | FND-03 | Seuls les 415 produits par `express.json()` (jeu de caractères non pris en charge) sont formatés ; le rejet d'un corps envoyé dans un autre format que JSON n'est pas implémenté. | Contrôle du type de contenu rattaché à FND-08 (précisions SET-05). | FND-08 |
 | FND-03 | Aucun test automatisé ni requête Postman ; vérification manuelle. | FND-06 et DOC-01 ne sont pas réalisés. | FND-06 (prévoit des tests de route inconnue, de validation et d'erreur applicative) |
+| FND-04 | Aucune validation n'existait dans les controllers : les validations de format dupliquées se trouvaient dans le service utilisateur. Elles sont remplacées par des schémas Zod déclarés sur les routes ; le service ne garde que les règles métier (existence, unicité de l'email). | Objectif du ticket : « un body invalide ne déclenche jamais le service ». | — |
+| FND-04 | Corrige, par conséquence, le PATCH avec `name` refusé et l'identifiant non numérique renvoyé en 404 (désormais 400). | La branche erronée faisait partie des validations supprimées ; les paramètres de chemin sont désormais validés. | Tests de non-régression dans FND-06 |
+| FND-04 | Les paramètres de chemin et de requête sont validés mais pas convertis ; seul le corps est remplacé par la sortie du schéma. Un emplacement sans schéma doit être vide. | Types Express exacts ; identifiants traités comme des chaînes (conventions §7) ; rejet des paramètres inconnus (conventions §2). | Lecture typée des paramètres de requête : premier endpoint paginé (QUAL-04) |
+| FND-04 | `src/utils/validators.ts` supprimé. | Plus utilisé après le passage aux schémas Zod. | — |
+| FND-04 | Règles de format inchangées : pas de validation du format de l'email ni de normalisation. | Relève d'AUTH-01 et AUTH-04. | AUTH-01, AUTH-04 |
+| FND-04 | Aucun test automatisé ni requête Postman ; vérification manuelle. | FND-06 et DOC-01 ne sont pas réalisés. | FND-06 |
 
 ## Écarts introduits par SET-05 (conventions de l'API)
 
@@ -97,6 +105,4 @@ Règles du backlog conservées sans changement :
 ## Tickets additionnels proposés (non démarrés)
 
 - **FND-09 — Gérer les erreurs de démarrage du serveur** (P1, dépendances : FND-01, FND-02). Gestion de l'événement `error` de `listen` (port occupé, accès refusé), message explicite et arrêt avec code 1. Hors périmètre : logger (FND-05), erreurs de base (DB-01), arrêt propre (QUAL-06). Modifie uniquement `server.ts`.
-- **Correction des bugs HTTP identifiés à l'audit** : prévue après FND-06, pour être couverte par des tests.
-  - Restent à traiter : PATCH `/users/:id` avec un `name` valide refusé en 400, identifiant non numérique renvoyant 404.
-  - Le JSON invalide renvoyant 500 et la route inconnue renvoyant une page HTML sont traités par FND-03.
+- **Correction des bugs HTTP identifiés à l'audit** : sans objet. Les bugs ont été corrigés par FND-03 (JSON invalide, route inconnue) et FND-04 (PATCH, identifiant non numérique). Les tests de non-régression seront ajoutés dans FND-06.
