@@ -29,7 +29,7 @@ export const userService = {
     },
 
     replace(id: number, body: any): User {
-        const user = getById(id)
+        getById(id)
         const { name, email } = body ?? {}
         if (!isNonEmptyString(name) || !isNonEmptyString(email)) {
             throw new HttpError(400, 'Name and email are required')
@@ -42,7 +42,7 @@ export const userService = {
     },
 
     patch(id: number, body: any): User {
-        const user = getById(id)
+        getById(id)
         const { name, email } = body ?? {}
 
         if (name !== undefined && !isNonEmptyString(name)) {

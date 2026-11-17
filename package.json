@@ -3,11 +3,12 @@
  "version": "1.0.0",
  "description": "Node.js Express application",
  "type": "module",
- "main": "server.ts",
+ "main": "dist/server.cjs",
  "scripts": {
   "dev": "nodemon --watch . -e js,ts,json --exec \"tsx watch server.ts\"",
-  "build": "tsup server.ts --format cjs --clean",
-  "start": "node dist/server.js"
+  "typecheck": "tsc --noEmit",
+  "build": "npm run typecheck && tsup server.ts --format cjs --clean",
+  "start": "node dist/server.cjs"
  },
  "dependencies": {
   "cors": "^2.8.6",
