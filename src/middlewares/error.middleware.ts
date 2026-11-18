@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express'
+import { logger } from '../config/logger'
 import { HttpError, type ErrorDetail } from '../utils/http-error'
 
 /* Corps d'une réponse d'erreur */
@@ -40,7 +41,7 @@ export const notFoundHandler: RequestHandler = (_req, _res, next) => {
 /* Gestionnaire d'erreurs centralisé.
  * Express reconnaît un middleware d'erreur à ses QUATRE paramètres
 */
-export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
     if (res.headersSent) {
         // La réponse a déjà commencé : Express interrompt la connexion.
         next(err)
@@ -49,8 +50,10 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
 
     let httpError = err instanceof HttpError ? err : fromBodyParserError(err)
     if (!httpError) {
-        // Erreur inattendue : détail uniquement dans console serveur et jamais dans la réponse.
-        console.error(err)
+        // Erreur inattendue : détail uniquement dans les logs du serveur, jamais dans la réponse.
+        // req.log (pino-http) ajoute l'identifiant de la requête ; le logger global sert de secours.
+        const log = req.log ?? logger
+        log.error({ err }, 'Unexpected error')
         httpError = new HttpError(500, 'INTERNAL_ERROR', 'Internal server error')
     }
 

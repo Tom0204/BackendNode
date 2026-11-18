@@ -33,7 +33,7 @@ export function startServer(app: RequestListener, port: number): Promise<Server>
 }
 
 // Lit le code d'une erreur système (EADDRINUSE, EACCES...) sans supposer le type de la valeur reçue.
-function systemErrorCode(error: unknown): string | undefined {
+export function systemErrorCode(error: unknown): string | undefined {
     if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string') {
         return error.code
     }

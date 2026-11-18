@@ -13,7 +13,8 @@ const envSchema = z.object({
         .int('doit être un entier')
         .min(1, 'doit être au moins 1')
         .max(65535, 'doit être au plus 65535')
-        .default(4001)
+        .default(4001),
+    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info')
 })
 
 export type Env = z.infer<typeof envSchema>

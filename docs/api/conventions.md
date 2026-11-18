@@ -54,6 +54,33 @@ Ce changement cassant est admis par la section 13 (aucun client ne consomme enco
   - un **champ inconnu** dans le corps ou un **paramètre de requête inconnu** donne **400** `VALIDATION_ERROR` ;
   - exception : les routes techniques (`/health`) ne lisent et ne valident aucun paramètre (section 1.1).
 - **Valeurs calculées :** le serveur ne reçoit jamais de valeurs calculées (dégâts, XP, monnaie, statistiques, niveau). Ces champs ne figurent pas dans les schémas d'entrée : ils sont donc rejetés comme inconnus.
+- **Identifiant de requête :** en-tête facultatif `X-Request-Id` (section 2.1).
+
+### 2.1 En-tête `X-Request-Id` (FND-05)
+
+Chaque requête reçoit un identifiant, qui permet de retrouver dans les journaux du serveur tout ce qui la concerne (support, diagnostic d'une erreur 500).
+
+| Élément | Règle |
+|---|---|
+| En requête | **Facultatif.** Le client peut fournir son propre identifiant, par exemple pour suivre une requête de bout en bout |
+| Identifiant accepté | 1 à 128 caractères parmi `A-Z`, `a-z`, `0-9`, `.`, `_`, `-` |
+| Identifiant absent ou non conforme | **Pas d'erreur** : la valeur reçue est ignorée et le serveur génère un UUID |
+| En réponse | **Toujours présent**, sur toutes les réponses : succès, erreurs (y compris 404 et 500) et 204 sans corps. Il contient l'identifiant repris ou généré |
+| Corps des réponses | L'identifiant n'y figure **pas** : le format des sections 3 et 4 est inchangé |
+| Sécurité | L'identifiant est journalisé : il ne doit **jamais** contenir de donnée sensible. Ce n'est pas un mécanisme d'authentification |
+
+Exemple d'échange :
+
+```text
+GET /api/v1/users/99 HTTP/1.1
+X-Request-Id: client-abc-123
+
+HTTP/1.1 404 Not Found
+Content-Type: application/json; charset=utf-8
+X-Request-Id: client-abc-123
+```
+
+Un client qui signale un problème transmet la valeur de `X-Request-Id` de la réponse concernée : elle suffit à retrouver les journaux correspondants.
 
 ## 3. Réponses de succès
 
@@ -448,3 +475,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | 2026-11-17 | Codes métier USER_NOT_FOUND et EMAIL_ALREADY_USED (FND-03) |
 | 2026-11-17 | Champ `field` d'une erreur portant sur un emplacement entier (FND-04) |
 | 2026-11-18 | Préfixe `/api/v1` appliqué aux routes existantes, enveloppe de succès, route `GET /health`, suppression de `GET /` (FND-07) ; correction de trois lignes mal formatées |
+| 2026-11-18 | En-tête `X-Request-Id` en requête (facultatif) et en réponse (toujours présent) (FND-05) ; changement additif (section 13) |

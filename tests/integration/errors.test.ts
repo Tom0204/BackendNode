@@ -1,10 +1,12 @@
 import express from 'express'
 import type { Express } from 'express'
 import request from 'supertest'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { errorHandler, notFoundHandler } from '../../src/middlewares/error.middleware'
+import { createRequestLogger } from '../../src/middlewares/request-logger.middleware'
 import { loadFreshApp } from '../helpers/fresh-modules'
 import { expectErrorResponse } from '../helpers/http'
+import { createLogCapture, LOG_LEVELS } from '../helpers/log-capture'
 
 // Chemin écrit en clair : les tests décrivent le contrat public de l'API.
 const USERS = '/api/v1/users'
@@ -63,13 +65,15 @@ describe('corps de requête rejetés par express.json()', () => {
 })
 
 describe('erreur inattendue', () => {
-    it("500 INTERNAL_ERROR générique : aucun détail interne dans la réponse, détail dans la console du serveur", async () => {
-        // On masque l'affichage de console.error pendant ce test, tout en enregistrant ses appels.
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+        it("500 INTERNAL_ERROR générique : aucun détail interne dans la réponse, détail dans les logs du serveur", async () => {
+        // Logger qui écrit en mémoire, pour lire le log d'erreur produit (FND-05).
+        const capture = createLogCapture()
 
         // Petite application de test : une route qui lève une erreur inattendue,
-        // suivie des VRAIS gestionnaires de FND-03. Le code de l'application n'est pas modifié.
+        // entourée des VRAIS middlewares (log de requête de FND-05, gestionnaires de FND-03).
+        // Le code de l'application n'est pas modifié.
         const testApp = express()
+        testApp.use(createRequestLogger(capture.logger))
         testApp.get('/boom', () => {
             throw new Error('secret internal detail')
         })
@@ -83,8 +87,13 @@ describe('erreur inattendue', () => {
         // Ni le message interne, ni une trace d'appels (fichier.ts:ligne) dans la réponse.
         expect(response.text).not.toContain('secret internal detail')
         expect(response.text).not.toMatch(/\.ts:\d+/)
-        // L'erreur complète est bien transmise à la console du serveur, et une seule fois.
-        expect(consoleError).toHaveBeenCalledTimes(1)
-        expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'secret internal detail' }))
+        // L'erreur complète est journalisée une seule fois, rattachée à la requête par son identifiant.
+        const errorLogs = capture.entries.filter((entry) => entry.msg === 'Unexpected error')
+        expect(errorLogs).toHaveLength(1)
+        expect(errorLogs[0]).toMatchObject({
+            level: LOG_LEVELS.error,
+            reqId: response.headers['x-request-id'],
+            err: { message: 'secret internal detail' }
+        })
     })
 })

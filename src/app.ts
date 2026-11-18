@@ -3,9 +3,13 @@ import cors from 'cors'
 import routes, { API_V1_PREFIX } from './routes'
 import healthRoutes from './routes/health.routes'
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
+import { createRequestLogger } from './middlewares/request-logger.middleware'
+import { logger } from './config/logger'
 
 const app = express()
 
+// En premier : chaque requête reçoit son identifiant et est journalisée, même si elle est rejetée ensuite.
+app.use(createRequestLogger(logger))
 app.use(cors())
 app.use(express.json())
 

@@ -7,7 +7,7 @@ afterEach(() => {
     vi.unstubAllEnvs()
 })
 
-const DEFAULT_ENV = { NODE_ENV: 'development', PORT: 4001 }
+const DEFAULT_ENV = { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: 'info' }
 
 describe('parseEnvironment', () => {
     it("applique les valeurs par défaut quand aucune variable n'est définie", () => {
@@ -17,7 +17,15 @@ describe('parseEnvironment', () => {
     it('convertit PORT en nombre et accepte un NODE_ENV valide', () => {
         expect(parseEnvironment({ NODE_ENV: 'production', PORT: '4002' })).toEqual({
             success: true,
-            env: { NODE_ENV: 'production', PORT: 4002 }
+            env: { NODE_ENV: 'production', PORT: 4002, LOG_LEVEL: 'info' }
+        })
+    })
+
+
+    it.each(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])('accepte LOG_LEVEL=%s', (level) => {
+        expect(parseEnvironment({ LOG_LEVEL: level })).toEqual({
+            success: true,
+            env: { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: level }
         })
     })
 
@@ -27,7 +35,8 @@ describe('parseEnvironment', () => {
         { label: 'PORT trop grand', source: { PORT: '70000' }, problem: 'PORT : doit être au plus 65535' },
         { label: 'PORT décimal', source: { PORT: '4001.5' }, problem: 'PORT : doit être un entier' },
         { label: 'PORT vide', source: { PORT: '' }, problem: 'PORT : doit être au moins 1' },
-        { label: 'NODE_ENV inconnu', source: { NODE_ENV: 'prod' }, problem: expect.stringMatching(/^NODE_ENV : /) }
+        { label: 'NODE_ENV inconnu', source: { NODE_ENV: 'prod' }, problem: expect.stringMatching(/^NODE_ENV : /) },
+        { label: 'LOG_LEVEL inconnu', source: { LOG_LEVEL: 'verbose' }, problem: expect.stringMatching(/^LOG_LEVEL : /) }
     ])('refuse : $label', ({ source, problem }) => {
         expect(parseEnvironment(source)).toEqual({ success: false, problems: [problem] })
     })
