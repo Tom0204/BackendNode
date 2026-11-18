@@ -1,6 +1,6 @@
 # Adaptations par rapport au backlog initial
 
-Dernière mise à jour : 2026-11-17
+Dernière mise à jour : 2026-11-18
 
 Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet Claude « API jeux vidéo ». Ce fichier recense les écarts décidés par rapport à lui, avec leur raison.
 
@@ -15,7 +15,9 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet
 | SET-01 | Validé | `818a426` |
 | SET-05 | Validé | `13e50ef` |
 | FND-03 | Validé | `f537454` |
-| FND-04 | Livré, en attente de validation | — |
+| FND-04 | Validé | `e742552` |
+| FND-06 | Livré, en attente de validation | — |
+| FND-05 | Analysé, reporté après FND-07 (analyse conservée dans le projet Claude, hors dépôt) | — |
 
 ## Ordre de réalisation
 
@@ -56,6 +58,16 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | FND-04 | `src/utils/validators.ts` supprimé. | Plus utilisé après le passage aux schémas Zod. | — |
 | FND-04 | Règles de format inchangées : pas de validation du format de l'email ni de normalisation. | Relève d'AUTH-01 et AUTH-04. | AUTH-01, AUTH-04 |
 | FND-04 | Aucun test automatisé ni requête Postman ; vérification manuelle. | FND-06 et DOC-01 ne sont pas réalisés. | FND-06 |
+| FND-06 | Framework retenu : Vitest 5 (5.1.0), avec supertest (7.3.2) et `@types/supertest` (7.2.1) pour les tests HTTP, en dépendances de développement. Vite (8.3.8) est installé par Vitest. | Vitest était proposé par le backlog : TypeScript et ESM sans configuration supplémentaire. supertest teste l'application Express sans démarrer `server.ts`. | — |
+| FND-06 | Vitest 5 exige Node.js ≥ 22.12. | Contrainte de la version installée ; le projet utilise Node 22.23.2. | À reprendre dans la documentation d'installation (README) |
+| FND-06 | En test, `NODE_ENV=test` est imposé par `vitest.config.ts`, et `environment.ts` ne charge jamais le fichier `.env` dans ce cas. | Tests reproductibles, indépendants du `.env` de chaque machine ; aucune base de développement ne pourra être lue par les tests. | DB-01 : base de test dédiée, configurée explicitement |
+| FND-06 | `environment.ts` expose une fonction pure `parseEnvironment(source)` ; le comportement au démarrage est inchangé. | Tester la configuration sans modifier `process.env` et sans arrêter le lanceur de tests. | — |
+| FND-06 | L'état du repository en mémoire est isolé par rechargement des modules (`vi.resetModules()` et imports dynamiques), sans code réservé aux tests dans le repository. | Chaque test part des données initiales, quel que soit l'ordre d'exécution. | DB-04 : isolation à revoir avec une base de données |
+| FND-06 | L'erreur 500 est testée avec une petite application de test qui assemble les vrais gestionnaires d'erreurs. | Aucune route de test ajoutée à l'application. | — |
+| FND-06 | L'arrêt réel du processus sur configuration invalide n'est pas testé automatiquement. | Vérifié manuellement en FND-02 et en FND-06 (étape A4) ; un test automatique demanderait de lancer un processus séparé. | — |
+| FND-06 | Les tests sont inclus dans `tsconfig.json` : `npm run typecheck`, donc aussi `npm run build`, vérifient leurs types. | Même exigence de typage strict que le code de l'application. | — |
+| FND-06 | Pas de seuil de couverture de code ni d'intégration continue. | Non demandés par le ticket. | — |
+| FND-06 | Pas de requêtes Postman. | La collection est prévue en DOC-01, après FND-07. | DOC-01 |
 
 ## Écarts introduits par SET-05 (conventions de l'API)
 
@@ -98,6 +110,91 @@ Règles du backlog conservées sans changement :
 - QUAL-04 : 400 pour des paramètres invalides.
 - FND-03 : 404 pour une route inconnue, 500 sans détail interne.
 
+## Tests automatisés (FND-06)
+
+### Outils et commandes
+
+| Élément | Valeur |
+|---|---|
+| Framework | Vitest 5.1.0 (dépendance de développement) |
+| Tests HTTP | supertest 7.3.2 et `@types/supertest` 7.2.1 |
+| Lancer les tests | `npm test` (`vitest run` : une exécution, code de sortie 0 si tout réussit) |
+| Mode surveillance | `npx vitest` |
+| Ordre aléatoire | `npx vitest run --sequence.shuffle` |
+
+### Organisation
+
+```text
+tests/
+├── helpers/
+│   ├── fresh-modules.ts   # application ou service neufs (vi.resetModules + import dynamique)
+│   ├── errors.ts          # captureError : vérifier une erreur par status et code
+│   └── http.ts            # expectErrorResponse : format d'erreur des conventions (SET-05)
+├── unit/                  # sans HTTP ni serveur
+│   ├── http-error.test.ts
+│   ├── environment.test.ts
+│   ├── user.service.test.ts
+│   └── validation.middleware.test.ts
+└── integration/           # requêtes HTTP sur l'application Express, via supertest
+    ├── errors.test.ts
+    └── users.test.ts
+```
+
+### Configuration (`vitest.config.ts`)
+
+- `include: ['tests/**/*.test.ts']` : seuls ces fichiers sont des tests ; les outils de `tests/helpers/` n'en sont pas.
+- `environment: 'node'` : pas de navigateur simulé.
+- `env: { NODE_ENV: 'test' }` : environnement de test imposé ; le `.env` local n'est pas lu.
+- `unstubEnvs: true` : les variables modifiées avec `vi.stubEnv()` sont restaurées après chaque test.
+- `restoreMocks: true` : les fonctions espionnées avec `vi.spyOn()` sont restaurées après chaque test.
+
+### Règles d'isolation
+
+- Les modules **avec état** (application, service, repository) ne sont jamais importés en haut d'un fichier de test. Ils sont obtenus par `loadFreshApp()` ou `loadFreshUserService()` dans `beforeEach`.
+- Les modules **sans état** (`http-error`, schémas, middleware de validation, configuration, `zod`, `express`) sont importés normalement.
+- Les erreurs issues de modules rechargés sont vérifiées par leurs propriétés (`status`, `code`), et non avec `instanceof`.
+- Les tests de configuration passent un objet à `parseEnvironment()` et ne modifient pas `process.env`. Le seul test qui le modifie utilise `vi.stubEnv()`, restauré automatiquement.
+
+### Couverture : 80 tests
+
+| Fichier | Tests | Contenu |
+|---|---|---|
+| `unit/http-error.test.ts` | 11 | Structure de `HttpError`, statut, code, message et détails de chaque fonction de création (400, 401, 403, 404, 409, 422) |
+| `unit/environment.test.ts` | 12 | Valeurs par défaut ; conversion de `PORT` ; refus de `abc`, `0`, `70000`, `4001.5`, valeur vide et `NODE_ENV` inconnu ; plusieurs problèmes à la fois ; variables étrangères ignorées ; indépendance vis-à-vis de `process.env` ; source non modifiée |
+| `unit/user.service.test.ts` | 18 | Règles métier sans HTTP : lecture, `USER_NOT_FOUND`, création, `EMAIL_ALREADY_USED` (création, remplacement, modification partielle) sans modification de l'état, suppression, isolation entre tests |
+| `unit/validation.middleware.test.ts` | 11 | Corps remplacé par la sortie du schéma ; paramètres validés mais non convertis ; champs manquants ; champ et paramètre de requête inconnus ; identifiant invalide ; erreur sur le corps entier (`field: "body"`) ; chemins imbriqués ; regroupement des erreurs en un seul appel à `next` |
+| `integration/errors.test.ts` | 6 | Route inconnue et méthode non prévue (404 `ROUTE_NOT_FOUND`), JSON illisible (400 `INVALID_JSON`), corps trop volumineux (413), jeu de caractères non pris en charge (415), erreur inattendue (500 générique, sans détail interne ni trace, détail transmis à la console du serveur) |
+| `integration/users.test.ts` | 22 | CRUD (200, 201, 204) ; 404 `USER_NOT_FOUND` ; 409 `EMAIL_ALREADY_USED` ; 400 `VALIDATION_ERROR` avec `details` exacts ; espion sur l'instance réelle du service, prouvant qu'une requête invalide ne l'appelle jamais (avec un test témoin) ; isolation entre tests |
+
+Contrôles effectués lors de la réalisation :
+- 80 tests réussis, y compris en ordre aléatoire ;
+- tests réussis malgré un `.env` local invalide ;
+- trois régressions introduites volontairement, chacune détectée puis annulée : le nom ignoré par PATCH, une erreur 500 qui expose le message interne, la validation retirée de `POST /users`.
+
+### Critères d'acceptation du ticket
+
+| Critère | Comment il est respecté |
+|---|---|
+| `npm test` exécute les tests de façon reproductible | Configuration versionnée, `.env` ignoré, données réinitialisées à chaque test, réussite en ordre aléatoire |
+| Les tests ne dépendent pas de la base de développement | Aucune base de données n'existe encore et aucune n'est nécessaire ; le `.env` n'est jamais lu en test, donc une future `DATABASE_URL` de développement ne pourra pas être utilisée |
+| Le démarrage du serveur n'est pas requis pour les tests de services | `server.ts` n'est jamais importé ; les tests de services appellent le service directement ; les tests HTTP utilisent supertest, qui ouvre un port temporaire |
+
+### Reprises clôturées par FND-06
+
+| Ticket d'origine | Reprise prévue | Couverture |
+|---|---|---|
+| FND-02 | Tests de configuration à ajouter avec FND-06 | `unit/environment.test.ts` |
+| FND-03 | Tests de route inconnue, de validation et d'erreur applicative | `integration/errors.test.ts`, `integration/users.test.ts`, `unit/http-error.test.ts` |
+| FND-04 | Tests de non-régression : PATCH avec `name`, identifiant non numérique | Tests unitaires et d'intégration dédiés, nommés « non-régression » |
+| FND-03, FND-04 | Non-régression : JSON invalide (400) et route inconnue (404 JSON) | `integration/errors.test.ts` |
+| FND-04 | Aucun test du middleware de validation | `unit/validation.middleware.test.ts` et tests 400 d'intégration |
+
+### Points à reprendre dans les tickets suivants
+
+- **FND-07 :** les tests utilisent les chemins actuels (`/users`) et des réponses de succès sans enveloppe. Ils seront adaptés au passage sous `/api/v1` et à l'enveloppe de succès.
+- **FND-05 :** le test de l'erreur 500 espionne `console.error`. Il sera adapté quand le logger le remplacera, avec `LOG_LEVEL=silent` pour garder la sortie des tests propre.
+- **DB-01 et DB-04 :** base de test dédiée, et isolation des données à revoir lorsque le repository utilisera une base.
+
 ## Décisions de fonctionnement
 
 - Le serveur de développement ne surveille pas le `.env` : après une modification, il faut le redémarrer manuellement.
@@ -105,4 +202,4 @@ Règles du backlog conservées sans changement :
 ## Tickets additionnels proposés (non démarrés)
 
 - **FND-09 — Gérer les erreurs de démarrage du serveur** (P1, dépendances : FND-01, FND-02). Gestion de l'événement `error` de `listen` (port occupé, accès refusé), message explicite et arrêt avec code 1. Hors périmètre : logger (FND-05), erreurs de base (DB-01), arrêt propre (QUAL-06). Modifie uniquement `server.ts`.
-- **Correction des bugs HTTP identifiés à l'audit** : sans objet. Les bugs ont été corrigés par FND-03 (JSON invalide, route inconnue) et FND-04 (PATCH, identifiant non numérique). Les tests de non-régression seront ajoutés dans FND-06.
+- **Correction des bugs HTTP identifiés à l'audit** : sans objet. Les bugs ont été corrigés par FND-03 (JSON invalide, route inconnue) et FND-04 (PATCH, identifiant non numérique). Les tests de non-régression ont été ajoutés dans FND-06 (voir « Tests automatisés (FND-06) »).

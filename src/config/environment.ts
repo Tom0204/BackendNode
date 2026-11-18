@@ -3,8 +3,8 @@ import { resolve } from 'node:path'
 import { z } from 'zod'
 
 /* Configuration centralisée de l'application
- * Seul endroit projet qui lit les variables d'environnement
-*/
+ * Seul endroit du projet qui lit les variables d'environnement
+ */
 
 const envSchema = z.object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -18,6 +18,31 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>
 
+/** Variables d'environnement à valider (process.env ou un objet construit, par exemple dans un test). */
+export type EnvironmentSource = Record<string, string | undefined>
+
+/** Résultat de la validation : la configuration, ou la liste des problèmes détectés. */
+export type ParseEnvironmentResult =
+    | { success: true; env: Env }
+    | { success: false; problems: string[] }
+
+/**
+ * Valide un ensemble de variables d'environnement.
+ * Fonction pure : elle ne lit pas process.env, ne charge aucun fichier et n'arrête pas le processus.
+ * Elle peut donc être testée en lui passant un simple objet.
+ */
+export function parseEnvironment(source: EnvironmentSource): ParseEnvironmentResult {
+    const result = envSchema.safeParse(source)
+    if (!result.success) {
+        // Seuls le nom de la variable et la raison sont conservés, jamais les valeurs.
+        const problems = result.error.issues.map(
+            (issue) => `${issue.path.map(String).join('.')} : ${issue.message}`
+        )
+        return { success: false, problems }
+    }
+    return { success: true, env: result.data }
+}
+
 // Affiche un message d'erreur puis arrête le processus
 function fail(problems: string[]): never {
     console.error('Configuration invalide : le serveur ne peut pas démarrer.')
@@ -28,9 +53,13 @@ function fail(problems: string[]): never {
     process.exit(1)
 }
 
-// Charge .env uniquement si existe (absence n'est pas une erreur)
-// Variables déjà définies dans l'environnement du système sont pas écrasées par le .env (natif de Node)
+// Charge .env uniquement s'il existe (son absence n'est pas une erreur).
+// Les variables déjà définies dans l'environnement du système ne sont pas écrasées par le .env (natif de Node).
+// En test (NODE_ENV=test), le .env local n'est jamais chargé : les tests ne dépendent pas de la machine.
 function loadDotEnvIfPresent(): void {
+    if (process.env.NODE_ENV === 'test') {
+        return
+    }
     const envFilePath = resolve(process.cwd(), '.env')
     if (!existsSync(envFilePath)) {
         return
@@ -46,14 +75,11 @@ function loadDotEnvIfPresent(): void {
 function loadEnvironment(): Env {
     loadDotEnvIfPresent()
 
-    const result = envSchema.safeParse(process.env)
+    const result = parseEnvironment(process.env)
     if (!result.success) {
-        // Seuls le nom de la variable et la raison sont affichés, jamais les valeurs.
-        return fail(
-            result.error.issues.map((issue) => `${issue.path.map(String).join('.')} : ${issue.message}`)
-        )
+        return fail(result.problems)
     }
-    return result.data
+    return result.env
 }
 
 export const env: Env = loadEnvironment()
