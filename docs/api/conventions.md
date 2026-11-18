@@ -1,7 +1,7 @@
 # Conventions de l'API (SET-05)
 
 > **Statut :** adoptées le 2026-11-17. Elles s'appliquent à tout nouvel endpoint.
-> Elles ne sont **pas encore appliquées** au code existant : voir la section 15.
+> Depuis FND-07, elles s'appliquent aussi aux routes existantes, sauf pour les points encore ouverts de la section 15.
 > Les chemins, champs et codes d'erreur cités en exemple illustrent les règles ; les endpoints correspondants
 > n'existent pas tant que leur ticket n'est pas réalisé.
 
@@ -11,6 +11,36 @@
 - Les **routes techniques** restent hors préfixe : `GET /health` (FND-07).
 - La version majeure change uniquement pour un changement cassant (section 13).
 - URL de base en développement : `http://localhost:4001/api/v1` (port par défaut, configurable avec `PORT`).
+- Dans le code, le préfixe est défini une seule fois : constante `API_V1_PREFIX`, exportée par `src/routes/index.ts`.
+
+### 1.1 Route de santé : `GET /health`
+
+| Élément | Règle |
+|---|---|
+| Chemin | `GET /health`, **hors** du préfixe `/api/v1` ; `HEAD /health` est aussi accepté |
+| Réponse | 200, enveloppe de succès minimale (exemple ci-dessous) |
+| Contenu | Statut uniquement : ni version, ni environnement, ni information système |
+| Cache | En-tête `Cache-Control: no-store` |
+| Validation | Aucune : les paramètres de requête sont ignorés (exception à la section 2) |
+
+```json
+{
+  "success": true,
+  "message": "Service is healthy",
+  "data": { "status": "OK" }
+}
+```
+
+### 1.2 Migration vers `/api/v1` (FND-07)
+
+| Avant FND-07 | Depuis FND-07 |
+|---|---|
+| `GET`, `POST /users` ; `GET`, `PUT`, `PATCH`, `DELETE /users/:id` | Mêmes méthodes sous `/api/v1/users` et `/api/v1/users/:id` |
+| Réponses de succès brutes (utilisateur ou tableau) | Enveloppe de succès (section 3), mêmes données dans `data` ; suppression toujours en 204 sans corps |
+| `GET /` → `{ "message": "Server is working" }` | Supprimée ; `GET /health` la remplace |
+| Anciens chemins | Supprimés, sans redirection : 404 `ROUTE_NOT_FOUND` |
+
+Ce changement cassant est admis par la section 13 (aucun client ne consomme encore l'API).
 
 ## 2. Requêtes
 
@@ -21,7 +51,8 @@
   - un JSON illisible donne **400** `INVALID_JSON`.
 - **Validation :**
   - les paramètres de chemin (`params`), de requête (`query`) et le corps (`body`) sont validés avant tout traitement métier (FND-04) ;
-  - un **champ inconnu** dans le corps ou un **paramètre de requête inconnu** donne **400** `VALIDATION_ERROR`.
+  - un **champ inconnu** dans le corps ou un **paramètre de requête inconnu** donne **400** `VALIDATION_ERROR` ;
+  - exception : les routes techniques (`/health`) ne lisent et ne valident aucun paramètre (section 1.1).
 - **Valeurs calculées :** le serveur ne reçoit jamais de valeurs calculées (dégâts, XP, monnaie, statistiques, niveau). Ces champs ne figurent pas dans les schémas d'entrée : ils sont donc rejetés comme inconnus.
 
 ## 3. Réponses de succès
@@ -120,7 +151,7 @@ Un succès sans contenu à renvoyer, comme une suppression, répond **204 sans c
 
 - Une réponse d'erreur ne contient jamais de champ `data`.
 - `field` désigne le chemin du champ en notation pointée : `name`, `items.0.quantity`, `pageSize`.
-- Pour une erreur qui porte sur un emplacement entier (un corps qui n'est pas un objet, par exemple), \ field` vaut le nom de l’emplacement : `body`, `query` ou `params`.`
+- Pour une erreur qui porte sur un emplacement entier (un corps qui n'est pas un objet, par exemple), `field` vaut le nom de l'emplacement : `body`, `query` ou `params`.
 
 ### 4.2 Exemples
 
@@ -286,8 +317,8 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
 
 | Code | Statut | Endpoints | Ticket |
 |---|---|---|---|
-| `USER_NOT_FOUND` | 404 | `GET`, `PUT`, `PATCH`, `DELETE /users/:id` | FND-03 |
-| `EMAIL_ALREADY_USED` | 409 | `POST /users`, `PUT /users/:id`, `PATCH /users/:id` | FND-03 |
+| `USER_NOT_FOUND` | 404 | `GET`, `PUT`, `PATCH`, `DELETE /api/v1/users/:id` | FND-03 (chemins mis à jour en FND-07) |
+| `EMAIL_ALREADY_USED` | 409 | `POST /api/v1/users`, `PUT /api/v1/users/:id`, `PATCH /api/v1/users/:id` | FND-03 (chemins mis à jour en FND-07) |
 
 ## 7. Identifiants et autorisations
 
@@ -404,9 +435,9 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 
 | Non-conformité actuelle | Ticket prévu |
 |---|---|
-| Erreurs au format `{ "error": "..." }`, route inconnue en HTML | Réalisé FND-03 |
-| Validation des paramètres et du corps | Réalisé pour \/users` (FND-04) |`
-| Routes sans préfixe `/api/v1`, réponses sans enveloppe, route `GET /` | FND-07 |
+| Erreurs au format `{ "error": "..." }`, route inconnue en HTML | Réalisé (FND-03) |
+| Validation des paramètres et du corps | Réalisé pour `/users` (FND-04) |
+| Routes sans préfixe `/api/v1`, réponses sans enveloppe, route `GET /` | Réalisé (FND-07) : voir section 1.2 |
 | Identifiants numériques, accès sans autorisation | DB-04, AUTH-02 |
 
 ## 16. Historique
@@ -415,4 +446,5 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 |---|---|
 | 2026-11-17 | Adoption des conventions (SET-05) |
 | 2026-11-17 | Codes métier USER_NOT_FOUND et EMAIL_ALREADY_USED (FND-03) |
-| 2026-11-17 | Champ \field` d’une erreur portant sur un emplacement entier (FND-04) |`
+| 2026-11-17 | Champ `field` d'une erreur portant sur un emplacement entier (FND-04) |
+| 2026-11-18 | Préfixe `/api/v1` appliqué aux routes existantes, enveloppe de succès, route `GET /health`, suppression de `GET /` (FND-07) ; correction de trois lignes mal formatées |

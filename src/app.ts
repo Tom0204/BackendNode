@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
-import routes from './routes'
+import routes, { API_V1_PREFIX } from './routes'
+import healthRoutes from './routes/health.routes'
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
 
 const app = express()
@@ -8,12 +9,14 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-app.get('/', (req, res) => {
-    res.status(200).json({ message: 'Server is working' })
-})
+// Route technique, hors du préfixe de version (conventions, section 1).
+app.use('/health', healthRoutes)
 
-app.use(routes)
+// Routes métier, toutes sous /api/v1.
+app.use(API_V1_PREFIX, routes)
 
+// Ces deux middlewares doivent rester en dernier, dans cet ordre :
+// 404 pour toute route non trouvée, puis formatage centralisé de toutes les erreurs.
 app.use(notFoundHandler)
 app.use(errorHandler)
 

@@ -12,11 +12,12 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet
 | Configuration TypeScript (additionnel) | Validé | `4450c2d` |
 | FND-01 | Validé (points du travail réaffectés, voir plus bas) | `4450c2d` |
 | FND-02 | Validé | `818a426` |
-| SET-01 | Validé | `818a426` |
+| SET-01 | Validé | `13e50ef` |
 | SET-05 | Validé | `13e50ef` |
 | FND-03 | Validé | `f537454` |
 | FND-04 | Validé | `e742552` |
-| FND-06 | Livré, en attente de validation | — |
+| FND-06 | Validé | `1734b41` |
+| FND-07 | Livré, en attente de validation | — |
 | FND-05 | Analysé, reporté après FND-07 (analyse conservée dans le projet Claude, hors dépôt) | — |
 
 ## Ordre de réalisation
@@ -68,6 +69,12 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | FND-06 | Les tests sont inclus dans `tsconfig.json` : `npm run typecheck`, donc aussi `npm run build`, vérifient leurs types. | Même exigence de typage strict que le code de l'application. | — |
 | FND-06 | Pas de seuil de couverture de code ni d'intégration continue. | Non demandés par le ticket. | — |
 | FND-06 | Pas de requêtes Postman. | La collection est prévue en DOC-01, après FND-07. | DOC-01 |
+| SET-01 | Commit de rattachement corrigé dans « État d'avancement » : `13e50ef` (et non `818a426`). | `docs/architecture/current-state.md`, livrable de SET-01, a été ajouté par `13e50ef` ; `818a426` est l'état du dépôt décrit par ce document. | — |
+| FND-07 | Anciennes routes `/users` et `/users/:id` supprimées, sans redirection : elles renvoient 404 `ROUTE_NOT_FOUND`. | Une seule façon d'appeler l'API ; changement cassant admis par les conventions (§13), aucun client. Migration documentée (critère 3 du ticket). | — |
+| FND-07 | Route `GET /` supprimée. | Remplacée par `GET /health`. | — |
+| FND-07 | Aucune validation des paramètres sur `/health` ; exception à la règle « paramètre inconnu → 400 ». | Route technique qui ne lit aucun paramètre et doit répondre tant que le service tourne. | — |
+| FND-07 | Les tests écrivent les chemins `/api/v1/...` en clair au lieu d'importer `API_V1_PREFIX`. | Un changement accidentel du préfixe doit faire échouer les tests. | — |
+| FND-07 | Pas de requêtes Postman. | DOC-01 dépend de FND-07 et peut désormais être réalisé. | DOC-01 |
 
 ## Écarts introduits par SET-05 (conventions de l'API)
 
@@ -191,9 +198,91 @@ Contrôles effectués lors de la réalisation :
 
 ### Points à reprendre dans les tickets suivants
 
-- **FND-07 :** les tests utilisent les chemins actuels (`/users`) et des réponses de succès sans enveloppe. Ils seront adaptés au passage sous `/api/v1` et à l'enveloppe de succès.
+- **FND-07 (réalisé) :** les tests utilisaient les chemins `/users` et des réponses de succès sans enveloppe. Ils ont été adaptés au préfixe `/api/v1` et à l'enveloppe de succès (voir « Structure API versionnée (FND-07) »).
 - **FND-05 :** le test de l'erreur 500 espionne `console.error`. Il sera adapté quand le logger le remplacera, avec `LOG_LEVEL=silent` pour garder la sortie des tests propre.
 - **DB-01 et DB-04 :** base de test dédiée, et isolation des données à revoir lorsque le repository utilisera une base.
+
+## Structure API versionnée (FND-07)
+
+### Routes après FND-07
+
+| Méthode | Chemin | Succès | Message |
+|---|---|---|---|
+| GET | `/health` | 200 | `Service is healthy` |
+| GET | `/api/v1/users` | 200 | `Users retrieved successfully` |
+| GET | `/api/v1/users/:id` | 200 | `User retrieved successfully` |
+| POST | `/api/v1/users` | 201 | `User created successfully` |
+| PUT | `/api/v1/users/:id` | 200 | `User replaced successfully` |
+| PATCH | `/api/v1/users/:id` | 200 | `User updated successfully` |
+| DELETE | `/api/v1/users/:id` | 204 | — (sans corps) |
+
+Les erreurs sont inchangées (format de FND-03, codes `USER_NOT_FOUND`, `EMAIL_ALREADY_USED`, `VALIDATION_ERROR`…). Toute autre route, y compris les anciens chemins, renvoie 404 `ROUTE_NOT_FOUND`.
+
+### Migration des routes existantes
+
+| Avant FND-07 | Depuis FND-07 |
+|---|---|
+| `/users`, `/users/:id` | `/api/v1/users`, `/api/v1/users/:id` (anciens chemins : 404 `ROUTE_NOT_FOUND`, sans redirection) |
+| Succès renvoyés bruts (utilisateur ou tableau) | Enveloppe `{ success, message, data }` ; mêmes données dans `data` ; DELETE toujours en 204 sans corps |
+| `GET /` → `{ "message": "Server is working" }` | Supprimée, remplacée par `GET /health` |
+| Pas de route de santé | `GET /health` (et `HEAD /health`), hors préfixe |
+
+### Décisions validées
+
+| Décision | Choix retenu | Raison |
+|---|---|---|
+| D1. Anciennes routes `/users` | Supprimées, 404 `ROUTE_NOT_FOUND`, sans redirection ni alias | Toutes les routes métier sous `/api/v1` ; aucun client à préserver |
+| D2. Route `GET /` | Supprimée | Doublon avec `/health` |
+| D3. Contenu de `/health` | `{ success: true, message: "Service is healthy", data: { status: "OK" } }`, en-tête `Cache-Control: no-store` | Statut simple, aucune information sensible, aucun cache |
+| D4. Validation sur `/health` | Aucune | La route doit répondre 200 même si un outil de surveillance ajoute un paramètre |
+| D5. Messages de succès | Voir le tableau « Routes après FND-07 » | Messages en anglais, informatifs (conventions §3) |
+| D6. Préfixe | Constante `API_V1_PREFIX = '/api/v1'`, exportée par `src/routes/index.ts` | Préfixe défini une seule fois dans le code ; chemins écrits en clair dans les tests |
+| D7. Gestionnaire d'erreurs | Inchangé ; `src/utils/response.ts` ne concerne que les succès | Pas de déplacement de code sans besoin réel |
+
+### Fichiers créés ou modifiés
+
+- **Créés :**
+  - `src/utils/response.ts` : fonction pure `successBody(message, data, meta?)`, où `data` est obligatoirement un objet ou un tableau (contrainte de type) ;
+  - `src/controllers/health.controller.ts` ;
+  - `src/routes/health.routes.ts`.
+- **Modifiés :**
+  - `src/routes/index.ts` : routeur de la v1 et constante `API_V1_PREFIX` ;
+  - `src/app.ts` : `/health`, puis `/api/v1`, puis le gestionnaire 404 et le gestionnaire d'erreurs, dans cet ordre ;
+  - `src/controllers/user.controller.ts` : enveloppe de succès, statuts inchangés.
+- **Inchangés :** services, repository, schémas, middlewares de validation et d'erreur, configuration, `server.ts`.
+
+### Tests : 97 au total
+
+| Fichier | Tests | Évolution |
+|---|---|---|
+| `unit/response.test.ts` | 6 | Nouveau : enveloppe avec ou sans `meta`, jamais de `error`, données non copiées, refus à la compilation d'une donnée qui n'est ni un objet ni un tableau |
+| `integration/health.test.ts` | 11 | Nouveau : enveloppe exacte de `/health`, `Cache-Control: no-store`, `HEAD`, paramètre ignoré, absence sous `/api/v1`, anciennes routes et `GET /` en 404 (service non appelé), routes inconnues sous `/api/v1` |
+| `integration/users.test.ts` | 22 | Adapté : chemins `/api/v1/users` et enveloppe de succès ; mêmes scénarios et assertions métier |
+| `integration/errors.test.ts` | 6 | Adapté : chemins `/api/v1/users` ; mêmes scénarios |
+| Tests unitaires de FND-06 | 52 | Inchangés |
+
+Outil ajouté : `expectSuccessResponse` dans `tests/helpers/http.ts` (enveloppe exacte, sans `error` ni `meta`).
+
+Contrôles effectués lors de la réalisation :
+- 97 tests réussis, y compris en ordre aléatoire ;
+- préfixe modifié par erreur (`/api/v2`) : 21 tests échouent ;
+- information ajoutée à `/health` (version de Node) : 2 tests échouent.
+
+### Critères d'acceptation du ticket
+
+| Critère | Comment il est respecté |
+|---|---|
+| `GET /health` retourne un statut simple | `{ "status": "OK" }` dans l'enveloppe ; test sur l'enveloppe exacte |
+| Les routes métier sont sous `/api/v1` | Montage par `app.use(API_V1_PREFIX, routes)` ; tests sur `/api/v1/users` et 404 sur les anciens chemins |
+| Les routes existantes restent fonctionnelles ou leur migration est documentée | Mêmes opérations, mêmes statuts et mêmes données sous `/api/v1` ; migration documentée ici et dans `docs/api/conventions.md` (§1.2) |
+
+### Points à reprendre
+
+- **DOC-01 :** la collection Postman peut être créée, avec `baseUrl = http://localhost:4001/api/v1` et une requête `GET /health` séparée (hors préfixe).
+- **FND-05 :** décider si les appels à `/health` sont journalisés ou ignorés (point déjà noté dans l'analyse de FND-05).
+- **DB-01 :** un éventuel contrôle de la base de données dans `/health` sera décidé avec la mise en place de la base.
+- **QUAL-04 :** `GET /api/v1/users` n'est pas paginé ; la pagination suivra les conventions (§9).
+- **Documentation d'installation (README) :** indiquer l'URL de base et la route `/health`.
 
 ## Décisions de fonctionnement
 

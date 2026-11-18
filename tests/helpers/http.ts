@@ -27,3 +27,24 @@ export function expectErrorResponse(
         error: { code, details: details ?? expect.any(Array) }
     })
 }
+
+/**
+ * Vérifie qu'une réponse respecte le format de succès des conventions (section 3) :
+ * statut attendu, JSON, enveloppe { success: true, message, data }, sans champ error ni meta.
+ * Si `data` est fourni, il doit correspondre exactement ; sinon, seule sa présence est vérifiée
+ * et le test contrôle ensuite response.body.data lui-même.
+ */
+export function expectSuccessResponse(
+    response: HttpResponseLike,
+    status: number,
+    message: string,
+    data?: unknown
+): void {
+    expect(response.status).toBe(status)
+    expect(response.headers['content-type']).toMatch(/^application\/json/)
+    expect(response.body).toEqual({
+        success: true,
+        message,
+        data: data === undefined ? expect.anything() : data
+    })
+}
