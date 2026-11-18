@@ -22,6 +22,7 @@
 | Contenu | Statut uniquement : ni version, ni environnement, ni information système |
 | Cache | En-tête `Cache-Control: no-store` |
 | Validation | Aucune : les paramètres de requête sont ignorés (exception à la section 2) |
+| Limitation du débit | Aucune : `/health` n'est pas soumis au quota de `/api/v1` (section 2.2) |
 
 ```json
 {
@@ -45,9 +46,10 @@ Ce changement cassant est admis par la section 13 (aucun client ne consomme enco
 ## 2. Requêtes
 
 - **Format :**
-  - un corps de requête est du JSON en UTF-8, envoyé avec l'en-tête `Content-Type: application/json` ;
-  - un corps envoyé dans un autre format donne **415** `UNSUPPORTED_MEDIA_TYPE` ;
-  - un corps dépassant la taille maximale (fixée par FND-08) donne **413** `PAYLOAD_TOO_LARGE` ;
+  - un corps de requête est du JSON en UTF-8, envoyé avec l'en-tête `Content-Type: application/json` (`application/json; charset=utf-8` est accepté) ;
+  - un corps envoyé dans un autre format, ou sans `Content-Type`, donne **415** `UNSUPPORTED_MEDIA_TYPE` (FND-08) ; dans Postman, choisir « raw » puis « JSON » ;
+  - une requête **sans corps** n'est pas concernée, quelle que soit sa méthode : pas de `Content-Length`, ou `Content-Length: 0` ;
+  - un corps de plus de **10 Ko** donne **413** `PAYLOAD_TOO_LARGE` (FND-08) ;
   - un JSON illisible donne **400** `INVALID_JSON`.
 - **Validation :**
   - les paramètres de chemin (`params`), de requête (`query`) et le corps (`body`) sont validés avant tout traitement métier (FND-04) ;
@@ -55,6 +57,7 @@ Ce changement cassant est admis par la section 13 (aucun client ne consomme enco
   - exception : les routes techniques (`/health`) ne lisent et ne valident aucun paramètre (section 1.1).
 - **Valeurs calculées :** le serveur ne reçoit jamais de valeurs calculées (dégâts, XP, monnaie, statistiques, niveau). Ces champs ne figurent pas dans les schémas d'entrée : ils sont donc rejetés comme inconnus.
 - **Identifiant de requête :** en-tête facultatif `X-Request-Id` (section 2.1).
+- **Protections HTTP :** limitation du débit, CORS et en-têtes de sécurité (section 2.2).
 
 ### 2.1 En-tête `X-Request-Id` (FND-05)
 
@@ -81,6 +84,53 @@ X-Request-Id: client-abc-123
 ```
 
 Un client qui signale un problème transmet la valeur de `X-Request-Id` de la réponse concernée : elle suffit à retrouver les journaux correspondants.
+
+### 2.2 Protections HTTP (FND-08)
+
+#### Limitation du débit
+
+| Élément | Règle |
+|---|---|
+| Portée | Toutes les requêtes sous `/api/v1`, y compris les routes inconnues et les requêtes rejetées pour leur corps (400, 413, 415) ; `/health` n'est pas limité |
+| Quota global | **300 requêtes par minute et par adresse IP** (fenêtre fixe de 60 secondes) |
+| Préflights `OPTIONS` | Traitées par CORS **avant** la limitation : elles ne consomment pas le quota |
+| Dépassement | **429** `RATE_LIMITED`, message `Too many requests`, `details` vide, au format d'erreur habituel (section 4) |
+| En-têtes, sur chaque réponse de `/api/v1` | `RateLimit-Policy: 300;w=60` et `RateLimit: limit=300, remaining=<restant>, reset=<secondes>` |
+| En-tête, en cas de dépassement | `Retry-After: <secondes>` : délai avant de pouvoir réessayer |
+| Endpoints sensibles | Un limiteur strict de **10 requêtes par 15 minutes** est prêt ; il sera branché sur la connexion et l'inscription par QUAL-02 |
+
+Le client qui reçoit un 429 attend la durée indiquée par `Retry-After` avant de réessayer ; il ne relance pas la requête immédiatement.
+
+```text
+HTTP/1.1 429 Too Many Requests
+RateLimit-Policy: 300;w=60
+RateLimit: limit=300, remaining=0, reset=42
+Retry-After: 42
+Content-Type: application/json; charset=utf-8
+
+{"success":false,"message":"Too many requests","error":{"code":"RATE_LIMITED","details":[]}}
+```
+
+Limites actuelles : le compteur est en mémoire, propre à chaque processus, et remis à zéro au redémarrage (stockage partagé et réglage par environnement : QUAL-02). Derrière un reverse proxy, l'adresse IP retenue est celle de la connexion tant que `trust proxy` n'est pas configuré (QUAL-06).
+
+#### CORS
+
+CORS ne concerne que les **navigateurs** : une requête sans en-tête `Origin` (Postman, curl, tests, appels entre serveurs) n'est jamais bloquée.
+
+| Configuration | Origines autorisées |
+|---|---|
+| `CORS_ORIGINS` définie | **Seulement** les origines listées, quel que soit l'environnement |
+| `CORS_ORIGINS` non définie, `NODE_ENV=production` | **Aucune** ; un avertissement est journalisé au démarrage |
+| `CORS_ORIGINS` non définie, `development` ou `test` | Toutes (`Access-Control-Allow-Origin: *`) |
+
+- **Format de `CORS_ORIGINS` :** origines séparées par des virgules, par exemple `https://jeu.example.com,http://localhost:5173`. Chaque origine s'écrit `http(s)://hôte[:port]`, en minuscules et sans port par défaut. Sont refusés au démarrage : un autre protocole, un chemin, un `/` final, des paramètres, un fragment, des identifiants et le joker `*`. Une valeur vide équivaut à une variable non définie.
+- **Origine non autorisée :** la réponse ne contient pas `Access-Control-Allow-Origin` ; le navigateur refuse alors au JavaScript de la lire. Une préflight reçoit quand même un 204, sans autorisation.
+- **En-têtes lisibles par le navigateur :** `X-Request-Id`, `Retry-After`, `RateLimit` et `RateLimit-Policy` (`Access-Control-Expose-Headers`).
+- **Cookies :** non autorisés pour le moment (`Access-Control-Allow-Credentials` absent) ; à revoir avec la stratégie d'authentification (AUTH-05).
+
+#### En-têtes de sécurité
+
+Toutes les réponses portent les en-têtes par défaut de la bibliothèque `helmet`, notamment `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: no-referrer`, `Strict-Transport-Security` et `Content-Security-Policy`. L'en-tête `X-Powered-By` n'est plus envoyé. Ces en-têtes ne changent ni le corps des réponses ni leur `Content-Type` ; `/health` garde son `Cache-Control: no-store`.
 
 ## 3. Réponses de succès
 
@@ -465,6 +515,7 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | Erreurs au format `{ "error": "..." }`, route inconnue en HTML | Réalisé (FND-03) |
 | Validation des paramètres et du corps | Réalisé pour `/users` (FND-04) |
 | Routes sans préfixe `/api/v1`, réponses sans enveloppe, route `GET /` | Réalisé (FND-07) : voir section 1.2 |
+| Corps envoyé dans un autre format que JSON, refusé en 400 au lieu de 415 | Réalisé (FND-08) |
 | Identifiants numériques, accès sans autorisation | DB-04, AUTH-02 |
 
 ## 16. Historique
@@ -476,3 +527,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | 2026-11-17 | Champ `field` d'une erreur portant sur un emplacement entier (FND-04) |
 | 2026-11-18 | Préfixe `/api/v1` appliqué aux routes existantes, enveloppe de succès, route `GET /health`, suppression de `GET /` (FND-07) ; correction de trois lignes mal formatées |
 | 2026-11-18 | En-tête `X-Request-Id` en requête (facultatif) et en réponse (toujours présent) (FND-05) ; changement additif (section 13) |
+| 2026-11-18 | Protections HTTP (FND-08) : corps JSON de 10 Ko au plus, 415 pour un corps qui n'est pas en JSON, limitation du débit et 429, CORS selon `CORS_ORIGINS`, en-têtes de sécurité ; le passage de 400 à 415 et la baisse de la limite de 100 Ko à 10 Ko sont des changements cassants admis (section 13) |

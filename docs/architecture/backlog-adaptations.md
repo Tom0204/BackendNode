@@ -19,7 +19,8 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet
 | FND-06 | Validé | `1734b41` |
 | FND-07 | Validé | `f09492f` |
 | FND-09 (additionnel) | Validé | `996dc8e` |
-| FND-05 | Livré, en attente de validation (analyse conservée dans le projet Claude, hors dépôt) | — |
+| FND-05 | Validé (analyse conservée dans le projet Claude, hors dépôt) | `b1d706e` |
+| FND-08 | Livré, en attente de validation | — |
 
 ## Ordre de réalisation
 
@@ -53,7 +54,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | SET-01, SET-05 | Aucun test automatisé ni requête Postman. | Tickets de documentation uniquement, sans modification du code. | — |
 | FND-03 | Le format d'erreur s'applique aux routes `/users` existantes : les erreurs passent de `{ "error": "..." }` à l'enveloppe de SET-05. | Critère « Toutes les erreurs API suivent le format défini dans SET-05 ». Changement cassant admis : aucun client. | — |
 | FND-03 | Les erreurs de validation des services renvoient `VALIDATION_ERROR` avec un `details` vide. | La réponse 400 structurée par champ relève de FND-04. | FND-04 |
-| FND-03 | Seuls les 415 produits par `express.json()` (jeu de caractères non pris en charge) sont formatés ; le rejet d'un corps envoyé dans un autre format que JSON n'est pas implémenté. | Contrôle du type de contenu rattaché à FND-08 (précisions SET-05). | FND-08 |
+| FND-03 | Seuls les 415 produits par `express.json()` (jeu de caractères non pris en charge) sont formatés ; le rejet d'un corps envoyé dans un autre format que JSON n'est pas implémenté. | Contrôle du type de contenu rattaché à FND-08 (précisions SET-05). | FND-08 (réalisé : 415 pour tout corps qui n'est pas en JSON) |
 | FND-03 | Aucun test automatisé ni requête Postman ; vérification manuelle. | FND-06 et DOC-01 ne sont pas réalisés. | FND-06 (prévoit des tests de route inconnue, de validation et d'erreur applicative) |
 | FND-04 | Aucune validation n'existait dans les controllers : les validations de format dupliquées se trouvaient dans le service utilisateur. Elles sont remplacées par des schémas Zod déclarés sur les routes ; le service ne garde que les règles métier (existence, unicité de l'email). | Objectif du ticket : « un body invalide ne déclenche jamais le service ». | — |
 | FND-04 | Corrige, par conséquence, le PATCH avec `name` refusé et l'identifiant non numérique renvoyé en 404 (désormais 400). | La branche erronée faisait partie des validations supprimées ; les paramètres de chemin sont désormais validés. | Tests de non-régression dans FND-06 |
@@ -97,6 +98,21 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | FND-05 | En production, un déploiement installé sans les dépendances de développement (`npm ci --omit=dev`) doit définir `NODE_ENV=production`. | `pino-pretty` n'est utilisé qu'en développement et n'est pas installé dans ce cas. | QUAL-06 |
 | FND-05 | Le test du 500 (`integration/errors.test.ts`) lit désormais le log produit au lieu d'espionner `console.error` ; `LOG_LEVEL=silent` en test (`vitest.config.ts`). | Reprise prévue par FND-06 ; sortie des tests sans logs. | — |
 | FND-05 | Pas de requêtes Postman. | Aucun endpoint n'est ajouté ; seul l'en-tête `X-Request-Id` apparaît dans les réponses. | DOC-01 |
+| FND-08 | Bibliothèques retenues : `helmet` (8.3.0) et `express-rate-limit` (8.7.4), en dépendances. | Décisions D3 et D5 : en-têtes de sécurité standard et maintenus ; rate limiting avec en-têtes IETF, sans implémentation maison. | — |
+| FND-08 | Limite du corps JSON abaissée de 100 Ko (valeur implicite d'`express.json()`) à 10 Ko, en constante (`JSON_BODY_LIMIT`). | Décision D1 : les corps de l'API sont petits ; moins de mémoire consommée par des requêtes abusives. Changement cassant admis (aucun client). | — |
+| FND-08 | Un corps qui n'est pas en JSON passe de 400 (validation) à 415 `UNSUPPORTED_MEDIA_TYPE` ; `Content-Length: 0` n'est pas considéré comme un corps. | Reprise de FND-03 et précision SET-05 ; un POST vide envoyé par Postman ne doit pas être refusé en 415. | — |
+| FND-08 | Limites de débit en constantes (300 par minute en global, 10 par 15 minutes pour le limiteur strict) ; compteur en mémoire, propre à chaque processus. | Décision D5 : préparer sans multiplier les variables d'environnement. | QUAL-02 : limites par environnement, stockage partagé |
+| FND-08 | Limiteur strict créé par une fonction (`createStrictRateLimiter()`), branché sur aucune route. | Les endpoints de connexion et d'inscription n'existent pas ; chaque route sensible aura besoin de son propre compteur. | QUAL-02 |
+| FND-08 | Limiteur global monté **avant** la lecture du corps (écart E1 par rapport au plan d'analyse, qui le plaçait après `express.json()`). | Les requêtes rejetées en 400, 413 ou 415 comptent dans le quota, et une rafale est arrêtée sans lire les corps. | — |
+| FND-08 | En-têtes exposés par CORS : `X-Request-Id`, plus `Retry-After`, `RateLimit` et `RateLimit-Policy` (écart E2 ; le plan ne prévoyait que `X-Request-Id`). | Sans cette autorisation, le JavaScript d'un Front-End ne peut pas lire le délai d'attente après un 429. | — |
+| FND-08 | `CORS_ORIGINS` vide ou faite d'espaces : traitée comme non définie (écart E3). | Une ligne `CORS_ORIGINS=` dans `.env` ne bloque pas le démarrage ; en production, on retombe sur le cas le plus sûr (aucune origine). | — |
+| FND-08 | Origines CORS refusées désignées par leur position (« l'origine n°2… ») sans recopier la valeur ; forme normalisée exigée (minuscules, sans port par défaut) (écart E4). | Règle de FND-02 : aucune valeur dans les messages de configuration (une origine peut contenir des identifiants). Les navigateurs envoient l'origine sous forme normalisée : une autre écriture ne serait jamais reconnue. | — |
+| FND-08 | Messages internes de `express-rate-limit` écrits dans les logs Pino (option `logger` de la bibliothèque, adaptateur `createRateLimitLogger`) au lieu de la console (écart E5). | Messages rattachés aux logs de l'application ; aucune modification globale de `console`. | — |
+| FND-08 | Production sans `CORS_ORIGINS` : aucune origine autorisée et avertissement au démarrage, sans refus de démarrer. | Décision D4 : un déploiement où l'API n'est appelée que depuis la même origine, derrière un proxy, doit rester possible. | — |
+| FND-08 | `trust proxy` non configuré : un en-tête `X-Forwarded-For` est ignoré, et signalé dans les logs seulement s'il est présent sur la première requête traitée par un limiteur (contrôle unique de la bibliothèque). | La configuration du reverse proxy relève de QUAL-06. | QUAL-06 |
+| FND-08 | CORS sans cookies (`credentials` non activé) ; pas de `maxAge` pour les préflights ; `helmet` avec sa configuration par défaut. | La gestion des cookies dépend de la stratégie d'authentification ; les réglages fins ne sont pas demandés par le ticket. | AUTH-05 (cookies) |
+| FND-08 | Comportement de production vérifié dans de petites applications de test (vrai middleware, politique CORS donnée) et manuellement, sans charger l'application avec `NODE_ENV=production`. | En production, le fichier `.env` local serait lu et pourrait influencer les tests. | — |
+| FND-08 | Pas de requêtes Postman. | Aucun endpoint n'est ajouté ; seuls des en-têtes et les statuts 413, 415 et 429 apparaissent. | DOC-01 (prévoir le cas 415 avec un corps « Text » et le cas 429) |
 
 ## Écarts introduits par SET-05 (conventions de l'API)
 
@@ -443,6 +459,80 @@ Contrôles effectués lors de la réalisation :
 - **AUTH-05 :** interdire les secrets dans les chemins et les paramètres de requête (le chemin est journalisé).
 - **QUAL-06 :** arrêt propre (signaux, fermeture des connexions) ; rappeler que `NODE_ENV=production` est obligatoire sans dépendances de développement.
 - **Documentation d'installation (README) :** décrire `LOG_LEVEL` et l'en-tête `X-Request-Id`.
+
+## Protections HTTP (FND-08)
+
+Réalisé selon l'analyse validée (décisions D1 à D6, précisions du propriétaire), avec les écarts E1 à E5 validés (voir le tableau des adaptations).
+
+### Comportement
+
+| Élément | Règle appliquée |
+|---|---|
+| Taille du corps | 10 Ko au plus (`JSON_BODY_LIMIT`) ; au-delà, 413 `PAYLOAD_TOO_LARGE` |
+| Format du corps | Une requête avec un corps (`Content-Length` supérieur à 0 ou `Transfer-Encoding`) doit être en `application/json`, sinon 415 `UNSUPPORTED_MEDIA_TYPE` ; requêtes sans corps non concernées |
+| En-têtes de sécurité | `helmet()` avec sa configuration par défaut ; `X-Powered-By` supprimé |
+| CORS | `CORS_ORIGINS` définie : ces origines seulement ; non définie en production : aucune, avec un avertissement au démarrage ; non définie en development et test : toutes. En-têtes exposés : `X-Request-Id`, `Retry-After`, `RateLimit`, `RateLimit-Policy`. Pas de cookies |
+| Validation de `CORS_ORIGINS` | Origines `http(s)://hôte[:port]` normalisées, séparées par des virgules ; chemin, `/` final, paramètres, fragment, identifiants, autre protocole et joker `*` refusés au démarrage (code 1), avec la position de l'origine fautive |
+| Rate limiting global | `/api/v1` : 300 requêtes par minute et par adresse IP ; `/health` non limité ; préflights non comptées ; en-têtes `RateLimit` et `RateLimit-Policy` |
+| Dépassement | `next(new HttpError(429, 'RATE_LIMITED', 'Too many requests'))` : réponse produite par le gestionnaire d'erreurs existant, avec `Retry-After` ; log `warn` de la requête avec son `reqId` |
+| Limiteur strict | `createStrictRateLimiter()` : 10 requêtes par 15 minutes, branché sur aucune route (QUAL-02) |
+| Messages de `express-rate-limit` | Écrits dans les logs Pino (`Rate limiter warning` en `warn`, `Rate limiter error` en `error`, champ `context` quand la bibliothèque fournit un message) ; rien dans la console |
+
+### Ordre des middlewares (`src/app.ts`)
+
+1. Log de requête (FND-05) : toutes les réponses, y compris 413, 415 et 429, sont journalisées avec leur `reqId`.
+2. En-têtes de sécurité.
+3. CORS : répond aux préflights `OPTIONS`, qui ne consomment donc pas le quota ; une réponse 429 reste lisible par un navigateur autorisé.
+4. Limiteur global sur `/api/v1`, avant la lecture du corps.
+5. Contrôle du `Content-Type` (415), puis `express.json({ limit: '10kb' })`.
+6. `/health`, routes `/api/v1`, 404, gestionnaire d'erreurs.
+
+### Fichiers créés ou modifiés
+
+- **Créés :**
+  - `src/config/http.ts` : `JSON_BODY_LIMIT`, `GLOBAL_RATE_LIMIT`, `STRICT_RATE_LIMIT`, `CORS_EXPOSED_HEADERS`, `resolveCorsAllowedOrigins()`, `corsAllowedOrigins` ;
+  - `src/middlewares/security.middleware.ts` : `createSecurityHeaders()`, `createCorsMiddleware()`, `requireJsonContentType` ;
+  - `src/middlewares/rate-limit.middleware.ts` : `createRateLimitLogger()`, `createRateLimiter()`, `globalRateLimiter`, `createStrictRateLimiter()` ;
+  - `tests/integration/security.test.ts` et `tests/integration/rate-limit.test.ts`.
+- **Modifiés :**
+  - `src/config/environment.ts` et `.env.example` : variable facultative `CORS_ORIGINS` ;
+  - `src/app.ts` : ordre des middlewares ci-dessus ;
+  - `server.ts` : avertissement au démarrage en production sans `CORS_ORIGINS` ;
+  - `tests/unit/environment.test.ts` : tests de `CORS_ORIGINS` ;
+  - `package.json`, `package-lock.json` : nouvelles dépendances.
+- **Inchangés :** routes, controllers, services, repository, schémas, gestionnaire d'erreurs, logger, démarrage ; aucun nouveau code d'erreur.
+
+### Tests : 219 au total
+
+| Fichier | Tests | Contenu |
+|---|---|---|
+| `integration/security.test.ts` | 26 | En-têtes de sécurité sur un succès et une erreur, `X-Powered-By` absent, `/health` garde `no-store` ; 11 Ko refusé en 413, 9 Ko accepté ; 415 pour `text/plain`, formulaire, XML et corps sans `Content-Type` ; `charset=utf-8` accepté ; GET, DELETE et POST vide non concernés ; CORS de l'application (toutes origines en test, préflight 204, liste lue depuis `CORS_ORIGINS`) ; politique selon l'environnement ; production avec et sans liste (requêtes sans `Origin` toujours servies) |
+| `integration/rate-limit.test.ts` | 15 | 429 au format d'erreur avec `Retry-After` et `RateLimit` ; quota restant sur chaque réponse, sans `X-RateLimit-*` ; un seul log `warn` avec `reqId` ; 429 lisible par CORS ; préflights non comptées ; compteurs indépendants ; `X-Forwarded-For` ignoré, une ligne de log, rien dans la console ; contrôle limité à la première requête ; adaptateur de logs ; limiteur strict 10/15 min et non branché ; limiteur global : 301e requête en 429, `/health` libre, 413 et 415 comptés, préflight non comptée |
+| `unit/environment.test.ts` | 39 | 19 tests ajoutés : `CORS_ORIGINS` absente, vide ou faite d'espaces ; liste avec espaces ; 13 refus ; plusieurs erreurs signalées par position ; valeur jamais recopiée |
+| Autres fichiers | 139 | Inchangés |
+
+Contrôles effectués lors de la réalisation :
+- 219 tests réussis, y compris en ordre aléatoire ;
+- régressions introduites volontairement, toutes détectées : contrôle du 415 retiré, limite par défaut, limiteur avant CORS, `helmet` retiré, toutes les origines en production, réponse 429 construite à la main, limiteur après la lecture du corps, forme normalisée non exigée, `Content-Length: 0` traité comme un corps, option `logger` retirée, message de contexte perdu ;
+- en développement : en-têtes de sécurité, 413 à 11 Ko, 415 en `text/plain`, DELETE en 204, CORS ouvert, préflight 204 ; rafale de 305 requêtes : 300 réponses 200 puis 5 réponses 429 avec `Retry-After`, `/health` toujours en 200 ;
+- en production : avertissement au démarrage sans `CORS_ORIGINS` et aucune origine autorisée ; avec `CORS_ORIGINS`, seule l'origine listée reçoit `Access-Control-Allow-Origin` ; curl servi normalement dans les deux cas ;
+- `CORS_ORIGINS` invalide (`*`, `/` final, identifiants, `ftp://`) : arrêt avec le message attendu et le code 1.
+
+### Critères d'acceptation
+
+| Critère | Comment il est respecté |
+|---|---|
+| Un body trop volumineux est rejeté | Limite explicite de 10 Ko, 413 `PAYLOAD_TOO_LARGE` au format d'erreur ; tests à 11 Ko (refus) et 9 Ko (accepté) |
+| CORS n'autorise pas toutes les origines en production par défaut | Production sans `CORS_ORIGINS` : aucune origine, avertissement au démarrage ; `*` refusé dans `CORS_ORIGINS` ; tests et contrôle manuel |
+| Les protections ne bloquent pas les tests locaux documentés | CORS ne concerne pas Postman ni curl ; quota large (300 par minute), `/health` exclu ; les 159 tests existants passent sans modification |
+
+### Points à reprendre
+
+- **QUAL-02 :** brancher `createStrictRateLimiter()` sur la connexion et l'inscription ; rendre les limites configurables par environnement ; stockage partagé si plusieurs instances.
+- **QUAL-06 :** configurer `trust proxy` derrière un reverse proxy, pour que le rate limiting utilise l'adresse IP réelle du client ; HTTPS (l'en-tête `Strict-Transport-Security` n'a d'effet qu'en HTTPS).
+- **AUTH-05 :** décider des cookies et, le cas échéant, activer `credentials` dans CORS avec une liste d'origines obligatoire.
+- **DOC-01 :** requêtes Postman pour les cas 413, 415 et 429.
+- **Documentation d'installation (README) :** décrire `CORS_ORIGINS`, en plus de `LOG_LEVEL` et de l'en-tête `X-Request-Id` (point de FND-05).
 
 ## Décisions de fonctionnement
 

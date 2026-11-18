@@ -6,6 +6,67 @@ import { z } from 'zod'
  * Seul endroit du projet qui lit les variables d'environnement
  */
 
+/**
+ * Raison du refus d'une origine CORS, ou undefined si elle est acceptée (FND-08, précision 1).
+ * Une origine acceptée est exactement « http(s)://hôte[:port] », sous la forme qu'envoient les navigateurs
+ * dans l'en-tête Origin : protocole http ou https, sans identifiants, chemin, / final, paramètres ni fragment,
+ * en minuscules et sans port par défaut. Le joker * est interdit.
+ */
+function corsOriginProblem(origin: string): string | undefined {
+    if (origin === '') {
+        return 'est vide'
+    }
+    if (origin.includes('*')) {
+        return 'utilise le joker *, interdit'
+    }
+    let url: URL
+    try {
+        url = new URL(origin)
+    } catch {
+        return "n'est pas une URL valide (format attendu : http(s)://hôte[:port])"
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return 'doit utiliser le protocole http ou https'
+    }
+    // new URL() accepte aussi « http:hote » : on exige l'écriture complète « http://hote ».
+    if (!origin.startsWith(`${url.protocol}//`)) {
+        return "n'est pas une URL valide (format attendu : http(s)://hôte[:port])"
+    }
+    const authority = origin.slice(url.protocol.length + 2)
+    if (authority.includes('@')) {
+        return "ne doit pas contenir d'identifiants"
+    }
+    if (/[/?#]/.test(authority)) {
+        return 'ne doit contenir ni chemin, ni / final, ni paramètres, ni fragment'
+    }
+    if (origin !== url.origin) {
+        return 'doit être écrite sous sa forme normalisée (minuscules, sans port par défaut)'
+    }
+    return undefined
+}
+
+/**
+ * CORS_ORIGINS : liste d'origines séparées par des virgules (espaces autour ignorés).
+ * Valeur absente ou vide : undefined (comportement par défaut, voir src/config/http.ts).
+ * Les messages désignent l'origine par sa position, sans recopier la valeur (règle de FND-02).
+ */
+const corsOriginsSchema = z
+    .string()
+    .optional()
+    .transform((value, ctx): string[] | undefined => {
+        if (value === undefined || value.trim() === '') {
+            return undefined
+        }
+        const origins = value.split(',').map((origin) => origin.trim())
+        origins.forEach((origin, index) => {
+            const problem = corsOriginProblem(origin)
+            if (problem) {
+                ctx.addIssue({ code: 'custom', message: `l'origine n°${index + 1} ${problem}` })
+            }
+        })
+        return origins
+    })
+
 const envSchema = z.object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce
@@ -14,7 +75,8 @@ const envSchema = z.object({
         .min(1, 'doit être au moins 1')
         .max(65535, 'doit être au plus 65535')
         .default(4001),
-    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info')
+    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+    CORS_ORIGINS: corsOriginsSchema
 })
 
 export type Env = z.infer<typeof envSchema>

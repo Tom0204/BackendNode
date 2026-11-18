@@ -1,26 +1,33 @@
 import express from 'express'
-import cors from 'cors'
 import routes, { API_V1_PREFIX } from './routes'
 import healthRoutes from './routes/health.routes'
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
 import { createRequestLogger } from './middlewares/request-logger.middleware'
+import { createCorsMiddleware, createSecurityHeaders, requireJsonContentType } from './middlewares/security.middleware'
+import { globalRateLimiter } from './middlewares/rate-limit.middleware'
 import { logger } from './config/logger'
+import { corsAllowedOrigins, JSON_BODY_LIMIT } from './config/http'
 
 const app = express()
 
-// En premier : chaque requête reçoit son identifiant et est journalisée, même si elle est rejetée ensuite.
+// L'ordre compte (FND-08) :
+// 1. Log de requête en premier : toute réponse, y compris 413, 415 et 429, est journalisée avec son identifiant.
 app.use(createRequestLogger(logger))
-app.use(cors())
-app.use(express.json())
+// 2. En-têtes de sécurité sur toutes les réponses.
+app.use(createSecurityHeaders())
+// 3. CORS avant le rate limiting : les préflights OPTIONS reçoivent leur réponse ici, sans consommer le quota,
+//    et une réponse 429 reste lisible par un navigateur autorisé.
+app.use(createCorsMiddleware(corsAllowedOrigins))
+// 4. Rate limiting de /api/v1 avant la lecture du corps : une rafale est arrêtée sans lire ni analyser les corps,
+//    et les requêtes rejetées en 413, 415 ou 400 comptent dans le quota. /health n'est pas limité.
+app.use(API_V1_PREFIX, globalRateLimiter)
+// 5. Corps de requête : JSON uniquement, 10 Ko au plus.
+app.use(requireJsonContentType)
+app.use(express.json({ limit: JSON_BODY_LIMIT }))
 
-// Route technique, hors du préfixe de version (conventions, section 1).
 app.use('/health', healthRoutes)
-
-// Routes métier, toutes sous /api/v1.
 app.use(API_V1_PREFIX, routes)
 
-// Ces deux middlewares doivent rester en dernier, dans cet ordre :
-// 404 pour toute route non trouvée, puis formatage centralisé de toutes les erreurs.
 app.use(notFoundHandler)
 app.use(errorHandler)
 
