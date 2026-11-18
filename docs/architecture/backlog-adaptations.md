@@ -17,7 +17,8 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet
 | FND-03 | Validé | `f537454` |
 | FND-04 | Validé | `e742552` |
 | FND-06 | Validé | `1734b41` |
-| FND-07 | Livré, en attente de validation | — |
+| FND-07 | Validé | `f09492f` |
+| FND-09 (additionnel) | Livré, en attente de validation | — |
 | FND-05 | Analysé, reporté après FND-07 (analyse conservée dans le projet Claude, hors dépôt) | — |
 
 ## Ordre de réalisation
@@ -36,6 +37,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 |---|---|---|
 | Nettoyage Git | Ajout du `.gitignore`, retrait de `node_modules/` de l'index Git | `29c5611` |
 | Configuration TypeScript | Création du `tsconfig.json` strict, correction de `npm start`, ajout du script `typecheck` | `4450c2d` |
+| FND-09 — Erreurs de démarrage du serveur | Module `src/startup.ts` (`startServer`, `describeStartupError`), messages clairs et code de sortie 1 en cas d'échec d'ouverture du port, 14 tests | Commit de FND-09 (à compléter lors de sa validation) |
 
 ## Adaptations de tickets existants
 
@@ -75,6 +77,14 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | FND-07 | Aucune validation des paramètres sur `/health` ; exception à la règle « paramètre inconnu → 400 ». | Route technique qui ne lit aucun paramètre et doit répondre tant que le service tourne. | — |
 | FND-07 | Les tests écrivent les chemins `/api/v1/...` en clair au lieu d'importer `API_V1_PREFIX`. | Un changement accidentel du préfixe doit faire échouer les tests. | — |
 | FND-07 | Pas de requêtes Postman. | DOC-01 dépend de FND-07 et peut désormais être réalisé. | DOC-01 |
+| FND-09 | Création du module `src/startup.ts`, alors que la définition du ticket prévoyait « modifie uniquement `server.ts` ». | Rendre le démarrage testable sans arrêter le lanceur de tests (Definition of Done, FND-06 étant désormais disponible). `server.ts` ne fait plus qu'afficher le message et arrêter le processus. | — |
+| FND-09 | Critères d'acceptation complétés : `EACCES` et erreur inconnue (message clair, sans trace, code 1) ; comportement couvert par des tests automatisés. | La définition d'origine ne citait que le port occupé et ne prévoyait pas de tests, FND-06 n'existant pas encore. | — |
+| FND-09 | Seule la phase de démarrage est couverte : les écouteurs temporaires sont retirés dès que le port est ouvert. | Les erreurs d'un serveur déjà démarré relèvent de l'arrêt propre (QUAL-06) et des erreurs fatales (FND-05). | QUAL-06, FND-05 |
+| FND-09 | Messages en français, sur le modèle des erreurs de configuration de FND-02 ; affichés avec `console.error`. | Cohérence des messages de démarrage destinés au développeur ou à l'administrateur ; le logger n'existe pas encore. | FND-05 : erreurs de démarrage journalisées en `fatal` (reprise notée dans l'analyse de FND-05, projet Claude) |
+| FND-09 | `.then()` et `.catch()` dans `server.ts` plutôt qu'un `await` au niveau supérieur. | Le build produit un fichier CommonJS (`dist/server.cjs`), qui n'accepte pas `await` hors d'une fonction. | — |
+| FND-09 | Arrêt réel du processus (`process.exit(1)`) vérifié manuellement, pas automatiquement. | Même raison qu'en FND-02 et FND-06 : un test automatique demanderait un processus séparé. | — |
+| FND-09 | `EACCES` testé par son message uniquement, pas sur un vrai port. | Le résultat dépend du système, des droits et des ports réservés (notamment sous Windows). | — |
+| FND-09 | Pas de requêtes Postman. | Aucun endpoint n'est ajouté ni modifié. | — |
 
 ## Écarts introduits par SET-05 (conventions de l'API)
 
@@ -284,6 +294,75 @@ Contrôles effectués lors de la réalisation :
 - **QUAL-04 :** `GET /api/v1/users` n'est pas paginé ; la pagination suivra les conventions (§9).
 - **Documentation d'installation (README) :** indiquer l'URL de base et la route `/health`.
 
+## Erreurs de démarrage (FND-09)
+
+Ticket additionnel, issu du point « Gérer proprement les erreurs de démarrage » de FND-01 (voir le tableau des adaptations) : cette reprise est désormais clôturée.
+
+### Comportement
+
+| Situation | Résultat |
+|---|---|
+| Démarrage normal | `Server is running on http://localhost:<port>` (inchangé) |
+| Configuration invalide (`PORT=abc`…) | **Inchangé** : message de FND-02 et code 1, avant toute tentative d'ouverture du port |
+| Port déjà utilisé (`EADDRINUSE`) | Message ci-dessous, sans trace d'appels, code de sortie 1 |
+| Accès refusé au port (`EACCES`) | Message dédié, sans trace d'appels, code de sortie 1 |
+| Autre erreur d'ouverture du port | Message générique avec le code et le message système, sans trace d'appels, code de sortie 1 |
+
+Messages (fonction pure `describeStartupError(error, port)`) :
+
+```text
+Le serveur ne peut pas démarrer.
+  - Le port 4001 est déjà utilisé par un autre processus.
+Arrêtez ce processus ou choisissez un autre port avec la variable PORT (voir .env.example).
+
+Le serveur ne peut pas démarrer.
+  - Accès refusé au port 4001 (port réservé par le système ou nécessitant des droits administrateur).
+Choisissez un autre port avec la variable PORT, en évitant les ports réservés par le système (voir .env.example).
+
+Le serveur ne peut pas démarrer.
+  - Erreur inattendue lors de l'ouverture du port 4001 : <code> <message système>
+Vérifiez la configuration réseau et la variable PORT (voir .env.example).
+```
+
+### Conception
+
+- **`startServer(app, port)`** (`src/startup.ts`) : crée le serveur avec `http.createServer(app)`, attache les écouteurs temporaires **avant** `listen()`, se résout uniquement à l'événement `listening` (port réellement ouvert) et se rejette avec l'erreur système d'origine. Chaque écouteur retire l'autre dès qu'il se déclenche : aucun écouteur temporaire ne reste attaché après le démarrage. La fonction n'affiche rien et n'arrête pas le processus.
+- **`describeStartupError(error, port)`** : construit les lignes du message, sans `any` ni transtypage ; ne reprend jamais `error.stack`.
+- **`server.ts`** : `startServer(app, env.PORT).then(...)` affiche le message de démarrage ; `.catch(...)` affiche les lignes avec `console.error`, puis appelle `process.exit(1)`.
+- **Inchangés :** `app.ts`, routes, controllers, services, middlewares, configuration, dépendances.
+
+### Tests : 111 au total
+
+| Fichier | Tests | Contenu |
+|---|---|---|
+| `unit/startup-error.test.ts` | 10 | Textes exacts pour `EADDRINUSE` et `EACCES` ; code inconnu ; `Error` sans code ; 4 valeurs qui ne sont pas des erreurs système ; jamais de trace d'appels ; port réellement repris |
+| `integration/start-server.test.ts` | 4 | Résolution quand le serveur écoute réellement ; écouteurs temporaires retirés (comparés à un serveur de référence, Node ajoutant ses propres écouteurs internes) ; rejet `EADDRINUSE` sur un port réellement occupé ; vraie application servie (`GET /health` en 200) |
+| Tests existants | 97 | Inchangés |
+
+Les tests d'intégration utilisent uniquement des ports attribués par le système (port `0`) et ferment chaque serveur dans `afterEach`, y compris les connexions maintenues ouvertes.
+
+Contrôles effectués lors de la réalisation :
+- 111 tests réussis, y compris en ordre aléatoire ;
+- écouteur `error` volontairement non retiré : le test des écouteurs échoue ;
+- double démarrage réel (`npx tsx server.ts`, `npm start`, `npm run dev`) : message clair et code 1, au lieu de la trace brute `Error: listen EADDRINUSE …` relevée avant le ticket ;
+- configuration invalide et démarrage normal inchangés.
+
+### Critères d'acceptation
+
+| Critère | Comment il est respecté |
+|---|---|
+| Port occupé : message clair, code 1 | Message `EADDRINUSE` ; vérification manuelle par double démarrage ; tests du message et du rejet |
+| `EACCES` et erreur inconnue : message clair, sans trace, code 1 | Messages dédiés et générique ; tests unitaires, dont l'absence de trace |
+| Démarrage normal inchangé | Même message ; test de la vraie application servie par `startServer` |
+| `dev`, `build`, `start` fonctionnent | Vérifiés manuellement |
+| Comportement couvert par des tests automatisés | 14 tests (10 unitaires, 4 d'intégration) |
+
+### Points à reprendre
+
+- **FND-05 :** journaliser les erreurs de démarrage avec Pino au niveau `fatal`, vider le logger avant l'arrêt, et remplacer le message de démarrage par un log `info` structuré. `describeStartupError` et `startServer` restent inchangés.
+- **QUAL-06 :** arrêt propre d'un serveur démarré (signaux, fermeture des connexions).
+- **DB-01 :** une éventuelle connexion à la base avant l'ouverture du port pourra s'insérer avant l'appel à `startServer`, sans l'anticiper maintenant.
+
 ## Décisions de fonctionnement
 
 - Le serveur de développement ne surveille pas le `.env` : après une modification, il faut le redémarrer manuellement.
@@ -291,4 +370,5 @@ Contrôles effectués lors de la réalisation :
 ## Tickets additionnels proposés (non démarrés)
 
 - **FND-09 — Gérer les erreurs de démarrage du serveur** (P1, dépendances : FND-01, FND-02). Gestion de l'événement `error` de `listen` (port occupé, accès refusé), message explicite et arrêt avec code 1. Hors périmètre : logger (FND-05), erreurs de base (DB-01), arrêt propre (QUAL-06). Modifie uniquement `server.ts`.
+  - **Réalisé** : voir « Tickets additionnels réalisés » et « Erreurs de démarrage (FND-09) ». La définition ci-dessus est conservée telle qu'elle avait été proposée ; ses écarts sont consignés dans le tableau des adaptations.
 - **Correction des bugs HTTP identifiés à l'audit** : sans objet. Les bugs ont été corrigés par FND-03 (JSON invalide, route inconnue) et FND-04 (PATCH, identifiant non numérique). Les tests de non-régression ont été ajoutés dans FND-06 (voir « Tests automatisés (FND-06) »).
