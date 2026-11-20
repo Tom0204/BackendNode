@@ -9,6 +9,9 @@ dist/
 .env
 .env.*
 !.env.example
+CLAUDE.md
+AGENTS.md
+Backlog_API_Mmorpg.md
 
 # Logs
 logs/

@@ -1,8 +1,8 @@
 # Adaptations par rapport au backlog initial
 
-Dernière mise à jour : 2026-11-18
+Dernière mise à jour : 2026-11-20
 
-Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet Claude « API jeux vidéo ». Ce fichier recense les écarts décidés par rapport à lui, avec leur raison.
+Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du dépôt. Ce fichier recense les écarts décidés par rapport à lui, avec leur raison.
 
 ## État d'avancement
 
@@ -20,7 +20,8 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) est conservé dans le projet
 | FND-07 | Validé | `f09492f` |
 | FND-09 (additionnel) | Validé | `996dc8e` |
 | FND-05 | Validé (analyse conservée dans le projet Claude, hors dépôt) | `b1d706e` |
-| FND-08 | Livré, en attente de validation | — |
+| FND-08 | Validé | `2583814` |
+| SET-04 | Validé (voir `docs/architecture/database.md`) | — |
 
 ## Ordre de réalisation
 
@@ -28,9 +29,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 
 1. FND-01 et FND-02 ont été réalisés avant SET-02, SET-03, SET-04 et SET-05, car ils ne dépendent que de SET-01.
 2. Ordre retenu ensuite : SET-05 (avec la clôture de SET-01) → FND-03 → FND-04 → FND-06 → FND-07 → FND-09, FND-05, FND-08.
-3. SET-02, SET-03 et SET-04 ne sont pas encore réalisés. Ils doivent l'être avant leurs tickets dépendants :
-   - SET-04 avant DB-01 ;
-   - SET-02 et SET-03 avant DB-02 et les tickets de gameplay.
+3. SET-04 est réalisé. SET-02 et SET-03 ne le sont pas encore : ils doivent l'être avant DB-02 et les tickets de gameplay.
 
 ## Tickets additionnels réalisés
 
@@ -125,7 +124,7 @@ Référence : `docs/api/conventions.md`.
 | COMBAT-07 | `POST /api/v1/combat/:combatId/actions/attack` | `POST /api/v1/combats/:combatId/actions` avec `type: "ATTACK"` | Point d'entrée unique pour toutes les actions, extensible et réutilisable tel quel pour un futur canal temps réel. |
 | COMBAT-09 | `GET /api/v1/combat/:combatId` | `GET /api/v1/combats/:combatId` | Ressource au pluriel. |
 | COMBAT-12 | `POST /api/v1/combat/:combatId/actions/skill` | `POST /api/v1/combats/:combatId/actions` avec `type: "SKILL"` | Même raison que COMBAT-07. |
-| En-tête du backlog | « Convention exacte des identifiants » à confirmer | API : chaînes opaques. Stockage : UUID v7 si compatible avec la base et l'ORM, sinon UUID v4. | Identifiants impossibles à deviner, ordonnés dans le temps (v7). Choix du stockage finalisé en SET-04. Un UUID ne remplace jamais un contrôle d'autorisation. |
+| En-tête du backlog | « Convention exacte des identifiants » à confirmer | API : chaînes opaques. Stockage : UUID v7 générés par PostgreSQL 18 (finalisé en SET-04). | Identifiants impossibles à deviner, ordonnés dans le temps (v7). Un UUID ne remplace jamais un contrôle d'autorisation. |
 
 ## Précisions apportées par SET-05
 
@@ -533,6 +532,18 @@ Contrôles effectués lors de la réalisation :
 - **AUTH-05 :** décider des cookies et, le cas échéant, activer `credentials` dans CORS avec une liste d'origines obligatoire.
 - **DOC-01 :** requêtes Postman pour les cas 413, 415 et 429.
 - **Documentation d'installation (README) :** décrire `CORS_ORIGINS`, en plus de `LOG_LEVEL` et de l'en-tête `X-Request-Id` (point de FND-05).
+
+## Base de données (SET-04)
+
+Décisions détaillées dans `docs/architecture/database.md` : PostgreSQL 18, Prisma 7.10.1 avec `@prisma/adapter-pg`, UUID v7 générés par PostgreSQL, migrations Prisma Migrate versionnées, base de test `mmorpg_test` protégée (variable `TEST_DATABASE_URL` dédiée).
+
+| Adaptation | Raison | Reprise |
+|---|---|---|
+| Aucune dépendance installée, aucun fichier de configuration créé | Le ticket décide et documente ; la mise en place relève de DB-01 | DB-01 (nécessite Docker sur le poste) |
+| Aucun test automatisé ni requête Postman | Ticket de documentation, sans modification du code (comme SET-01 et SET-05) | — |
+| Garde de la base de test seulement décrite | Implémentation et tests avec la connexion à la base | DB-01 |
+| Identifiants numériques des utilisateurs conservés | Passage aux UUID avec les repositories persistants | DB-04 |
+| CLI Prisma absente d'une installation de production (`npm ci --omit=dev`) | Dépend de la procédure de déploiement | QUAL-06 |
 
 ## Décisions de fonctionnement
 

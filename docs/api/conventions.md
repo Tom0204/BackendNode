@@ -400,7 +400,7 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
 ## 7. Identifiants et autorisations
 
 - **Dans l'API**, un identifiant est une **chaîne opaque** : le client la stocke et la renvoie, sans jamais l'interpréter ni la construire.
-- **En base**, on utilise un UUID v7 si la base et l'ORM retenus le permettent, sinon un UUID v4. Choix final en SET-04.
+- **En base**, les identifiants sont des UUID v7 générés par PostgreSQL 18 (`uuidv7()`) et stockés dans le type `uuid` natif (voir `docs/architecture/database.md`, SET-04). Un UUID v7 laisse lire son instant de création, à la milliseconde : cette information n'est pas considérée comme confidentielle.
 - Le serveur valide le **format** des identifiants reçus : un format invalide donne 400.
 - **Un UUID ne remplace jamais un contrôle d'autorisation.** Le fait qu'un identifiant soit impossible à deviner n'est pas une protection : chaque accès vérifie, côté serveur, l'authentification, la propriété de la ressource et les permissions.
 
@@ -528,3 +528,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | 2026-11-18 | Préfixe `/api/v1` appliqué aux routes existantes, enveloppe de succès, route `GET /health`, suppression de `GET /` (FND-07) ; correction de trois lignes mal formatées |
 | 2026-11-18 | En-tête `X-Request-Id` en requête (facultatif) et en réponse (toujours présent) (FND-05) ; changement additif (section 13) |
 | 2026-11-18 | Protections HTTP (FND-08) : corps JSON de 10 Ko au plus, 415 pour un corps qui n'est pas en JSON, limitation du débit et 429, CORS selon `CORS_ORIGINS`, en-têtes de sécurité ; le passage de 400 à 415 et la baisse de la limite de 100 Ko à 10 Ko sont des changements cassants admis (section 13) |
+| 2026-11-20 | Identifiants en base : UUID v7 générés par PostgreSQL 18, choix finalisé (SET-04) ; précision sans effet sur le contrat actuel de l'API |
