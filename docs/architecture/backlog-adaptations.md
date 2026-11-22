@@ -1,6 +1,6 @@
 # Adaptations par rapport au backlog initial
 
-Dernière mise à jour : 2026-11-20
+Dernière mise à jour : 2026-11-22
 
 Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du dépôt. Ce fichier recense les écarts décidés par rapport à lui, avec leur raison.
 
@@ -21,7 +21,9 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du d�
 | FND-09 (additionnel) | Validé | `996dc8e` |
 | FND-05 | Validé (analyse conservée dans le projet Claude, hors dépôt) | `b1d706e` |
 | FND-08 | Validé | `2583814` |
-| SET-04 | Validé (voir `docs/architecture/database.md`) | — |
+| SET-04 | Validé (voir `docs/architecture/database.md`) | `ea106ef` |
+| SET-02 | Validé (voir `docs/gameplay/mvp-scope.md`) | — |
+| SET-03 | Validé (voir `docs/gameplay/rules.md`) | — |
 
 ## Ordre de réalisation
 
@@ -29,7 +31,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 
 1. FND-01 et FND-02 ont été réalisés avant SET-02, SET-03, SET-04 et SET-05, car ils ne dépendent que de SET-01.
 2. Ordre retenu ensuite : SET-05 (avec la clôture de SET-01) → FND-03 → FND-04 → FND-06 → FND-07 → FND-09, FND-05, FND-08.
-3. SET-04 est réalisé. SET-02 et SET-03 ne le sont pas encore : ils doivent l'être avant DB-02 et les tickets de gameplay.
+3. SET-02, SET-03 et SET-04 sont réalisés.
 
 ## Tickets additionnels réalisés
 
@@ -544,6 +546,21 @@ Décisions détaillées dans `docs/architecture/database.md` : PostgreSQL 18, Pr
 | Garde de la base de test seulement décrite | Implémentation et tests avec la connexion à la base | DB-01 |
 | Identifiants numériques des utilisateurs conservés | Passage aux UUID avec les repositories persistants | DB-04 |
 | CLI Prisma absente d'une installation de production (`npm ci --omit=dev`) | Dépend de la procédure de déploiement | QUAL-06 |
+
+## Gameplay du MVP (SET-02, SET-03)
+
+Parcours du MVP : `docs/gameplay/mvp-scope.md`. Règles chiffrées : `docs/gameplay/rules.md` (décisions G1 à G12 validées avec leurs valeurs par défaut, complétées par les statistiques des classes et le monde initial).
+
+| Ticket | Adaptation | Raison |
+|---|---|---|
+| WORLD-07 | Au MVP, chaque combat crée sa propre instance de monstre ; instances partagées, réservation et réapparition reportées | Pas de concurrence entre joueurs dans le premier parcours |
+| WORLD-01, ITEM-01 à 04, REWARD-01 | Inclus dans le MVP malgré leur priorité P1 | Nécessaires à la zone de départ et au butin |
+| WORLD-06 | Hors MVP : le personnage est placé dans la zone de départ à sa création | Une seule zone au MVP |
+| COMBAT-08 | Tour du monstre résolu automatiquement dans la même requête | Fonctionnement REST, sans temps réel |
+| STAT-05 | Hors MVP : PV et mana remis au maximum après chaque combat | Pas de soins ni de régénération au MVP |
+| SET-02, SET-03 | Aucun test automatisé ni requête Postman | Tickets de documentation, sans modification du code |
+| CHAR-01 | `GET /classes` (et le détail d'une classe) est **public** : pas d'authentification, pas de dépendance à AUTH-07 (décision du 2026-11-22) | Donnée de référence sans propriétaire ; cohérent avec les dépendances et critères de CHAR-01 |
+| AUTH-07 | **Point à traiter :** clarifier dans `docs/api/conventions.md` la distinction entre routes publiques et routes protégées, et préciser la portée de la phrase de la section 7 (« chaque accès vérifie […] l'authentification »), qui vise les ressources propres aux joueurs | La convention actuelle ne liste pas les routes publiques |
 
 ## Décisions de fonctionnement
 

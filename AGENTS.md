@@ -22,6 +22,8 @@ Le serveur ne fait jamais confiance au client. Les règles du jeu, calculs (dég
 | `docs/api/conventions.md` | Contrat HTTP : routes, réponses, erreurs, statuts et conventions. |
 | `docs/architecture/current-state.md` | État initial du projet ; document historique qui peut être dépassé. |
 | `docs/architecture/backlog-adaptations.md` | Journal d'avancement : décisions, adaptations, fichiers modifiés et tests. |
+| `docs/architecture/database.md` | Décisions et mise en place de la base de données. |
+| `docs/gameplay/mvp-scope.md`, `docs/gameplay/rules.md` | Parcours du MVP et règles de jeu chiffrées : référence obligatoire pour tout ticket de gameplay. |
 | `AGENTS.md` | Instructions communes aux agents IA. |
 | `CLAUDE.md` | Instructions complémentaires propres à Claude Code. |
 
@@ -160,8 +162,10 @@ Les tickets suivants sont validés :
 - FND-06, FND-07, FND-08 et FND-09 (ticket additionnel).
 - FND-05.
 - SET-04.
+- SET-02 et SET-03.
 
 Derniers commits connus :
+- SET-04 : `ea106ef`.
 - FND-09 : `996dc8e`.
 - FND-05 : `b1d706e`.
 - FND-08 : `2583814`.
@@ -180,7 +184,7 @@ Ces informations sont un point de repère, pas une preuve de l'état actuel. Vé
 
 ### Organisation
 
-1. Travailler sur **un seul ticket à la fois**.
+1. Regrouper les tickets compatibles dans un même lot ; sinon, travailler sur un ticket à la fois.
 2. Respecter les dépendances et l'ordre du backlog.
 3. Vérifier l'état réel du dépôt avant toute proposition.
 4. Analyser le ticket avant de coder : objectif, prérequis, fichiers concernés, risques et critères d'acceptation.
@@ -188,36 +192,27 @@ Ces informations sont un point de repère, pas une preuve de l'état actuel. Vé
 6. Signaler les adaptations au plan sous forme de points E1, E2, etc.
 7. Ne jamais prendre seul une décision structurante : base de données, ORM, authentification, dépendance, changement cassant ou règle métier importante.
 
-### Rythme de réalisation
+### Trois phases par ticket ou lot
 
-- Ticket simple : une étape peut suffire.
-- Ticket intermédiaire : privilégier une étape d'implémentation puis une étape de validation et documentation.
-- Ticket complexe : découper davantage uniquement si nécessaire.
-- Ne pas multiplier artificiellement les étapes ni passer au ticket suivant avant validation du ticket en cours.
+**Phase 1 — Analyse et préparation.** Analyser les tickets et les fichiers existants, identifier dépendances, problèmes et décisions réellement nécessaires, regrouper les tickets compatibles. Présenter **une seule synthèse** : travail prévu, fichiers concernés, commandes importantes, décisions. Ne pas détailler chaque fichier sur plusieurs échanges. Attendre l'**accord global** de l'utilisateur.
 
-### Règle impérative : approbation avant chaque modification
+**Phase 2 — Réalisation et vérification.** Après l'accord : modifier directement les fichiers du périmètre validé, exécuter installations, commandes et tests, corriger les problèmes, sans demander de confirmation intermédiaire. S'arrêter uniquement sur un problème bloquant ou une décision non prévue, et ne demander que la clarification nécessaire. Bilan final :
+- fichiers créés et modifiés ;
+- résumé des changements ;
+- commandes exécutées ;
+- résultats des tests et vérifications ;
+- `git diff` complet ou présentation suffisamment détaillée ;
+- points restant à traiter.
 
-L'utilisateur souhaite garder le contrôle de toutes les modifications du projet.
+**Phase 3 — Validation et commit.** L'utilisateur examine le bilan. Le commit puis le push nécessitent chacun son **autorisation explicite**.
 
-**Avant chaque modification d'un fichier :**
-1. Présenter le chemin du fichier.
-2. Expliquer précisément ce qui va changer et pourquoi.
-3. Présenter le contenu complet proposé ou un diff suffisamment détaillé.
-4. Attendre une autorisation explicite de l'utilisateur.
-5. Ne modifier que ce fichier après autorisation.
-6. Vérifier le résultat et présenter ce qui a été réalisé avant de proposer le fichier suivant.
+### Garde-fous
 
-Une autorisation concernant un fichier ne vaut jamais autorisation pour un autre fichier.
-
-Cette règle s'applique également aux modifications de configuration, scripts, dépendances et fichiers générés.
-
-**Avant toute commande modifiant le dépôt, l'environnement ou des données**, expliquer son effet et attendre une autorisation explicite. Cela inclut notamment l'installation de paquets, les migrations, les suppressions, les changements de configuration et les commandes Git qui modifient l'état du dépôt.
-
-Les commandes de lecture et de diagnostic non destructives peuvent être exécutées sans cette autorisation.
-
-Ne jamais effectuer de commit, push, changement de branche, reset, rebase ou autre opération Git modifiant l'historique sans autorisation explicite.
-
-Une validation ne doit jamais être supposée à partir du silence de l'utilisateur. En cas de doute, demander confirmation.
+- Ne modifier aucun fichier hors du périmètre validé.
+- Une compilation ne suffit pas : exécuter les tests pertinents.
+- Si une vérification est impossible (par exemple Docker absent), le dire clairement, sans la présenter comme réussie.
+- Ne jamais effectuer de commit, push, changement de branche, reset, rebase ou autre opération Git modifiant l'historique sans autorisation explicite.
+- Une validation ne doit jamais être supposée à partir du silence de l'utilisateur. En cas de doute, demander confirmation.
 
 ## 9. Documentation et Git
 
