@@ -1,0 +1,11 @@
+// Schéma Prisma (DB-01). Les modèles arrivent avec DB-02.
+// L'URL de connexion est déclarée dans prisma.config.ts (Prisma 7).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

@@ -24,6 +24,7 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du d�
 | SET-04 | Validé (voir `docs/architecture/database.md`) | `ea106ef` |
 | SET-02 | Validé (voir `docs/gameplay/mvp-scope.md`) | — |
 | SET-03 | Validé (voir `docs/gameplay/rules.md`) | — |
+| DB-01 | Réalisé et vérifié avec Docker | — |
 
 ## Ordre de réalisation
 
@@ -31,7 +32,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 
 1. FND-01 et FND-02 ont été réalisés avant SET-02, SET-03, SET-04 et SET-05, car ils ne dépendent que de SET-01.
 2. Ordre retenu ensuite : SET-05 (avec la clôture de SET-01) → FND-03 → FND-04 → FND-06 → FND-07 → FND-09, FND-05, FND-08.
-3. SET-02, SET-03 et SET-04 sont réalisés.
+3. SET-02, SET-03 et SET-04 sont réalisés. DB-01 a été réalisé dans le même lot que SET-02 et SET-03 (indépendant d'eux).
 
 ## Tickets additionnels réalisés
 
@@ -561,6 +562,65 @@ Parcours du MVP : `docs/gameplay/mvp-scope.md`. Règles chiffrées : `docs/gamep
 | SET-02, SET-03 | Aucun test automatisé ni requête Postman | Tickets de documentation, sans modification du code |
 | CHAR-01 | `GET /classes` (et le détail d'une classe) est **public** : pas d'authentification, pas de dépendance à AUTH-07 (décision du 2026-11-22) | Donnée de référence sans propriétaire ; cohérent avec les dépendances et critères de CHAR-01 |
 | AUTH-07 | **Point à traiter :** clarifier dans `docs/api/conventions.md` la distinction entre routes publiques et routes protégées, et préciser la portée de la phrase de la section 7 (« chaque accès vérifie […] l'authentification »), qui vise les ressources propres aux joueurs | La convention actuelle ne liste pas les routes publiques |
+
+## Initialisation de la base (DB-01)
+
+Mise en place des décisions de SET-04. Détails et commandes : `docs/architecture/database.md` (sections 2, 4, 6 et 8).
+
+### Dépendances ajoutées (versions exactes)
+
+| Paquet | Type | Justification |
+|---|---|---|
+| `@prisma/client` 7.10.1 | Exécution | Client typé de l'ORM retenu (SET-04) |
+| `@prisma/adapter-pg` 7.10.1 | Exécution | Adaptateur de pilote obligatoire avec Prisma 7, branché sur un `pg.Pool` géré par l'application |
+| `pg` 8.23.1 | Exécution | Pilote PostgreSQL, importé directement pour le pool et la vérification de connexion |
+| `prisma` 7.10.1 | Développement | CLI : génération du client et migrations |
+| `@types/pg` 8.23.1 | Développement | Types de `pg` |
+
+Les autres alertes de `npm audit` (`esbuild`, `minimatch` via `nodemon`) existaient avant DB-01.
+
+### Risque accepté : vulnérabilité `effect` (à réexaminer à chaque mise à jour de Prisma)
+
+| Élément | Constat (2026-11-22) |
+|---|---|
+| Alerte | GHSA-7589-6fvf-x4pw, sévérité élevée : déni de service par expression régulière dans `Schema.TemplateLiteral`, `effect` ≤ 3.22.0 (corrigé en 3.22.1) |
+| Chaîne | `prisma` 7.10.1 → `@prisma/config` 7.10.1 → `effect` 3.20.0 (version exacte). De plus, `node_modules/prisma/build/cli.js` **embarque sa propre copie** d'`effect` 3.20.0 |
+| Exposition | Faible : CLI de développement uniquement, qui lit des fichiers du projet (`prisma.config.ts`, schéma) ; `effect` n'est ni dans le build ni dans `@prisma/client`. `@prisma/config` n'utilise pas `TemplateLiteral` |
+| Correctif proposé par `npm audit` | `prisma` 6.12.0 : retour à Prisma 6, incompatible avec SET-04 ; refusé |
+| Override `"overrides": { "effect": "3.22.5" }` | Testé : compatible (validate, generate, migrations, `test:db`, tests, typecheck, build). **Non appliqué** : il ne remplace que la copie de `@prisma/config` ; la copie embarquée dans `cli.js` reste en 3.20.0, et `npm audit` deviendrait silencieux alors que le code vulnérable resterait installé |
+| Réexamen | À chaque mise à jour de `prisma` : vérifier la version d'`effect` dépendante et embarquée (`npm ls effect`, version dans `cli.js`) et relancer `npm audit` |
+
+### Fichiers créés ou modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `docker-compose.yml`, `docker/postgres/init/01-create-test-database.sql` | Conteneur `postgres:18.7`, port sur `127.0.0.1`, volume sur `/var/lib/postgresql`, création de `mmorpg_test` |
+| `prisma.config.ts`, `prisma/schema.prisma` | Configuration de la CLI (charge le `.env` avec `process.loadEnvFile()`) ; schéma sans modèle (DB-02) |
+| `src/database/client.ts`, `src/database/errors.ts` | Pool, adaptateur et client uniques ; vérification `SELECT 1` ; messages d'échec sans message d'origine ni URL |
+| `src/config/environment.ts` | `DATABASE_URL` : URL PostgreSQL, obligatoire hors test |
+| `server.ts` | Vérification de la base avant l'ouverture du port ; arrêt avec le code 1 en cas d'échec |
+| `tests/helpers/test-database.ts`, `tests/database/*`, `vitest.db.config.ts` | Garde de la base de test, migrations puis tests base de données (`npm run test:db`) |
+| `tests/unit/database-error.test.ts`, `tests/unit/test-database-guard.test.ts`, `tests/unit/environment.test.ts` | Tests sans base |
+| `package.json`, `vitest.config.ts`, `tsconfig.json`, `.gitignore`, `.env.example` | Dépendances et scripts `db:*`, `test:db`, `pretypecheck` ; exclusion de `tests/database/` de `npm test` ; client généré ignoré ; nouvelles variables |
+
+### Adaptations
+
+| Adaptation | Raison | Reprise |
+|---|---|---|
+| Option `--shims` ajoutée à tsup dans `npm run build` | Le client généré utilise `import.meta.url`, vide dans un bundle CommonJS : le serveur compilé plantait au démarrage. `moduleFormat = "cjs"` aurait cassé `tsx` (projet ESM) | — |
+| Génération du client par `pretypecheck`, pas par `postinstall` | `postinstall` échouerait avec `npm ci --omit=dev` (CLI absente) | QUAL-06 |
+| `DATABASE_URL` facultative en test | Les tests unitaires et HTTP n'utilisent aucune base ; les tests de `environment.ts` fournissent une URL factice | — |
+| Le pool n'est utilisé qu'au démarrage | Les repositories restent en mémoire jusqu'à DB-04 | DB-04 |
+| Fermeture du pool à l'arrêt non gérée | Arrêt propre du serveur | QUAL-06 |
+| `db:status` renvoie le code 1 et `migrate diff` ne s'exécute pas | Aucune migration avant DB-02 | DB-02 |
+
+### Tests : 260 au total (`npm test`), 3 tests base de données (`npm run test:db`)
+
+- 41 nouveaux tests sans base (219 → 260) : garde de la base de test (21), messages d'échec de connexion (11, dont l'absence du message d'origine pour chaque code), `DATABASE_URL` (9).
+- Tests existants de `environment.ts` adaptés : une URL factice est ajoutée à chaque source et aux valeurs attendues, sans changer leur logique.
+- Vérifié aussi : `npx vitest run --sequence.shuffle`, `npm run build`, démarrage du serveur compilé et de `tsx` sans base (ECONNREFUSED), hôte introuvable, `DATABASE_URL` absente ou invalide, refus de `test:db` (URL absente, autre base, hôte distant, paramètres) ; aucun mot de passe dans les sorties.
+- `tests/database/connection.test.ts` : connexion, base `mmorpg_test`, génération d'un UUID v7 : 3/3 avec `npm run test:db`.
+- Vérifié avec Docker Desktop : conteneur `postgres:18.7` *healthy*, bases `mmorpg_dev` et `mmorpg_test` créées, port publié sur `127.0.0.1` uniquement, volume sur `/var/lib/postgresql`, `db:status` connecté, serveur démarré (`tsx` et build) avec `GET /health` à 200, base arrêtée puis `npm start` : `ECONNREFUSED` et code 1, données conservées après `db:down` puis `db:up`.
 
 ## Décisions de fonctionnement
 

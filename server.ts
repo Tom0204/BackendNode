@@ -1,6 +1,8 @@
 import { env } from './src/config/environment'
 import { flushLoggerAndExit, logger } from './src/config/logger'
 import app from './src/app'
+import { checkDatabaseConnection, createDatabase } from './src/database/client'
+import { describeDatabaseError } from './src/database/errors'
 import { describeStartupError, startServer, systemErrorCode } from './src/startup'
 
 // Erreurs imprévues du processus : log fatal, écriture des logs, puis arrêt avec le code 1 (FND-05, décision D6).
@@ -22,16 +24,47 @@ if (env.NODE_ENV === 'production' && env.CORS_ORIGINS === undefined) {
     )
 }
 
-// .then()/.catch() plutôt qu'un await au niveau supérieur :
+// Démarrage : vérification de la base (DB-01), puis ouverture du port (FND-09).
+// Fonction async appelée avec .then() plutôt qu'un await au niveau supérieur :
 // le build produit un fichier CommonJS (dist/server.cjs), qui n'accepte pas await hors d'une fonction.
-startServer(app, env.PORT)
-    .then(() => {
-        logger.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, `Server is running on http://localhost:${env.PORT}`)
+async function start(): Promise<void> {
+    // environment.ts rend DATABASE_URL obligatoire hors test ; ce contrôle couvre un lancement avec NODE_ENV=test.
+    if (env.DATABASE_URL === undefined) {
+        logger.fatal('Le serveur ne peut pas démarrer : DATABASE_URL non définie (voir .env.example).')
+        flushLoggerAndExit(1)
+        return
+    }
+
+    const database = createDatabase(env.DATABASE_URL)
+    // Erreur d'une connexion inactive du pool : journalisée sans arrêter le serveur.
+    // Seul le code est journalisé : le message pourrait contenir des informations sensibles.
+    database.pool.on('error', (error) => {
+        logger.error({ code: systemErrorCode(error) }, 'Database pool error')
     })
-    .catch((error: unknown) => {
+
+    // La base est vérifiée avant l'ouverture du port : le serveur ne reçoit aucune requête sans base disponible.
+    try {
+        await checkDatabaseConnection(database.pool)
+    } catch (error) {
+        // Seuls le code et les lignes calculées sont journalisés, jamais l'objet d'erreur (URL, message).
+        const [title, ...details] = describeDatabaseError(error)
+        logger.fatal({ code: systemErrorCode(error), details }, title)
+        flushLoggerAndExit(1)
+        return
+    }
+
+    try {
+        await startServer(app, env.PORT)
+    } catch (error) {
         // Erreur de démarrage connue (FND-09) : message clair en fatal, sans trace d'appels,
         // puis écriture des logs et arrêt avec le code 1.
         const [title, ...details] = describeStartupError(error, env.PORT)
         logger.fatal({ port: env.PORT, code: systemErrorCode(error), details }, title)
         flushLoggerAndExit(1)
-    })
+        return
+    }
+
+    logger.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, `Server is running on http://localhost:${env.PORT}`)
+}
+
+void start()

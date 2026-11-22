@@ -67,17 +67,49 @@ const corsOriginsSchema = z
         return origins
     })
 
-const envSchema = z.object({
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    PORT: z.coerce
-        .number()
-        .int('doit être un entier')
-        .min(1, 'doit être au moins 1')
-        .max(65535, 'doit être au plus 65535')
-        .default(4001),
-    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-    CORS_ORIGINS: corsOriginsSchema
-})
+const POSTGRES_PROTOCOLS = ['postgresql:', 'postgres:']
+
+// Vrai si la valeur est une URL de connexion PostgreSQL lisible (postgresql://utilisateur:motdepasse@hôte:port/base).
+function isPostgresUrl(value: string): boolean {
+    try {
+        return POSTGRES_PROTOCOLS.includes(new URL(value).protocol)
+    } catch {
+        return false
+    }
+}
+
+/**
+ * DATABASE_URL (DB-01) : facultative dans le schéma, obligatoire hors test (voir le superRefine plus bas).
+ * Les tests unitaires et HTTP n'utilisent aucune base ; les tests base de données lisent TEST_DATABASE_URL.
+ * Le message d'erreur ne recopie jamais la valeur, qui contient un mot de passe.
+ */
+const databaseUrlSchema = z
+    .string()
+    .refine(isPostgresUrl, 'doit être une URL PostgreSQL (postgresql://utilisateur:motdepasse@hôte:port/base)')
+    .optional()
+
+const envSchema = z
+    .object({
+        NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+        PORT: z.coerce
+            .number()
+            .int('doit être un entier')
+            .min(1, 'doit être au moins 1')
+            .max(65535, 'doit être au plus 65535')
+            .default(4001),
+        LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+        CORS_ORIGINS: corsOriginsSchema,
+        DATABASE_URL: databaseUrlSchema
+    })
+    .superRefine((env, ctx) => {
+        if (env.NODE_ENV !== 'test' && env.DATABASE_URL === undefined) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['DATABASE_URL'],
+                message: `obligatoire en ${env.NODE_ENV} (voir .env.example)`
+            })
+        }
+    })
 
 export type Env = z.infer<typeof envSchema>
 

@@ -1,9 +1,12 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
     test: {
         // Seuls les fichiers *.test.ts du dossier tests/ sont des tests.
         include: ['tests/**/*.test.ts'],
+
+        // Les tests base de données (tests/database/) ont leur propre configuration : npm run test:db (DB-01).
+        exclude: [...configDefaults.exclude, 'tests/database/**'],
 
         // Les tests s'exécutent dans Node : pas de navigateur simulé (API sans Front-End).
         environment: 'node',

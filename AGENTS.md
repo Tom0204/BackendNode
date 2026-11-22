@@ -52,9 +52,9 @@ Les versions indiquées dans `package.json` et le lockfile font foi. Avant d'ajo
 
 Toute nouvelle dépendance doit être justifiée et documentée dans `docs/architecture/backlog-adaptations.md`.
 
-### Base de données : décisions prises, mise en place à venir
+### Base de données
 
-Les choix de principe validés sont :
+Les choix validés (SET-04) et mis en place (DB-01) sont :
 - PostgreSQL 18.
 - Prisma ORM 7.10.1.
 - `@prisma/adapter-pg` avec un pool `pg.Pool` géré par l'application.
@@ -66,9 +66,7 @@ Les choix de principe validés sont :
 - Base de test dédiée nommée exactement `mmorpg_test`, avec une protection empêchant les tests d'utiliser une autre base.
 - Les tests existants doivent continuer à fonctionner sans base de données ; les tests nécessitant PostgreSQL sont lancés séparément.
 
-Ces décisions ne signifient pas que PostgreSQL, Docker ou Prisma sont déjà installés. Vérifier le backlog et l'avancement réel avant toute installation.
-
-Le choix de la base et de l'ORM est documenté par SET-04. DB-01 nécessite en plus Docker installé sur le poste.
+Prisma, `pg` et la configuration Docker sont installés (DB-01). Le serveur vérifie la base avant d'ouvrir son port : `npm run dev` et `npm start` exigent un `.env` (modèle : `.env.example`) et PostgreSQL démarré (`npm run db:up`, Docker Desktop requis). Le client Prisma est généré dans `src/generated/prisma/` (ignoré par Git) ; le build CommonJS utilise l'option `--shims` de tsup.
 
 Le repository utilisateur actuellement en mémoire est temporaire. Ne pas créer de nouvelle persistance définitive en mémoire.
 
@@ -135,9 +133,9 @@ Tests actuels :
 - Les tests ne doivent pas importer `server.ts`.
 - Les modules avec état doivent être isolés conformément aux helpers existants.
 - Les tests doivent couvrir les cas nominaux, erreurs, limites et non-régressions.
-- Les tests utilisant PostgreSQL devront employer exclusivement la base de test dédiée.
+- `tests/database/` pour les tests utilisant PostgreSQL : exclusivement la base `mmorpg_test`, protégée par `tests/helpers/test-database.ts`, et lancés uniquement par `npm run test:db`.
 
-Dernier état connu : **219 tests validés après FND-08**. Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
+Dernier état connu : **260 tests validés après DB-01** (`npm test`, sans base). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
 
 Commandes principales :
 
@@ -149,6 +147,9 @@ Commandes principales :
 | `npm start` | Démarrage de la version compilée. |
 | `npm test` | Exécution des tests. |
 | `npx vitest run --sequence.shuffle` | Vérification des tests dans un ordre aléatoire. |
+| `npm run test:db` | Tests base de données (PostgreSQL démarré, `TEST_DATABASE_URL`). |
+| `npm run db:up` / `npm run db:down` | Démarrage / arrêt du conteneur PostgreSQL. |
+| `npm run db:generate`, `db:migrate`, `db:status`, `db:reset` | Client Prisma et migrations (`db:reset` est destructif). |
 
 Avant de déclarer un ticket terminé, exécuter les vérifications adaptées, notamment le typecheck, les tests et le build. Ne jamais annoncer un test réussi s'il n'a pas réellement été exécuté.
 
@@ -163,6 +164,7 @@ Les tickets suivants sont validés :
 - FND-05.
 - SET-04.
 - SET-02 et SET-03.
+- DB-01.
 
 Derniers commits connus :
 - SET-04 : `ea106ef`.
@@ -174,7 +176,7 @@ FND-08 est **validé**, et non en attente de validation.
 
 État fonctionnel connu :
 - API de gestion des utilisateurs (CRUD en mémoire).
-- Pas encore de persistance PostgreSQL.
+- PostgreSQL et Prisma configurés (DB-01), sans modèle ni repository persistant (DB-02 à DB-04).
 - Pas encore d'authentification.
 - Pas encore de Front-End.
 

@@ -1,7 +1,7 @@
 # Base de données (SET-04)
 
-> **Statut :** décisions approuvées par le propriétaire du projet (SET-04, 2026-11-20).
-> Rien n'est encore installé : la mise en place relève de DB-01. Les commandes de ce document y seront appliquées.
+> **Statut :** décisions approuvées par le propriétaire du projet (SET-04, 2026-11-20), mises en place par DB-01 (2026-11-22).
+> Vérifications avec Docker Desktop effectuées le 2026-11-22 (voir section 8).
 
 ## 1. Besoins et choix
 
@@ -26,10 +26,10 @@ Besoins du projet :
 
 | Élément | Version |
 |---|---|
-| PostgreSQL | 18 (image Docker `postgres:18.x`, mineure épinglée en DB-01) |
+| PostgreSQL | 18 (image Docker `postgres:18.7`) |
 | `prisma` (CLI, dépendance de développement) | 7.10.1 exacte |
 | `@prisma/client`, `@prisma/adapter-pg` | 7.10.1 exacte |
-| `pg`, `@types/pg` | Fixées en DB-01 |
+| `pg`, `@types/pg` | 8.23.1 exacte |
 | Node.js | ≥ 20.19 exigé par Prisma 7 (projet : 22.x) |
 
 Les versions sont installées **exactes** : le tag `latest` de `prisma` sur npm ne pointe pas vers la branche 7.
@@ -39,6 +39,13 @@ Architecture :
 - accès à la base **uniquement dans les repositories** ; services indépendants d'Express et de Prisma ;
 - transactions `$transaction` pour toute opération qui modifie plusieurs données liées ;
 - fermeture du pool à l'arrêt du serveur : QUAL-06.
+
+Mise en œuvre (DB-01) :
+- `src/database/client.ts` : `createDatabase` (pool, adaptateur, client), `checkDatabaseConnection` (`SELECT 1`, délai de connexion de 5 s), `closeDatabase` ;
+- `server.ts` vérifie la base **avant** d'ouvrir le port ; en cas d'échec, `src/database/errors.ts` produit un message clair (code d'erreur uniquement, jamais le message d'origine ni l'URL) et le processus s'arrête avec le code 1 ;
+- `GET /health` ne contrôle pas la base ;
+- client généré dans `src/generated/prisma/` (ignoré par Git), régénéré par `npm run db:generate` et automatiquement avant `typecheck` et `build` ;
+- le client généré utilise `import.meta.url` : le build CommonJS (tsup) utilise l'option `--shims`.
 
 Particularités de Prisma 7 :
 - l'URL de connexion est déclarée dans le fichier de configuration Prisma, plus dans `schema.prisma` ;
@@ -66,7 +73,7 @@ Particularités de Prisma 7 :
 - Aucun identifiant de connexion dans Git : valeurs réelles dans `.env` (ignoré), valeurs factices dans `.env.example` (DB-01).
 - Les tests actuels (`npm test`) n'utilisent aucune base et ne lisent ni `DATABASE_URL` ni `TEST_DATABASE_URL`.
 
-Environnement local : **un conteneur** `postgres:18.x` contenant les deux bases, avec un port publié sur `127.0.0.1` uniquement.
+Environnement local : **un conteneur** `postgres:18.7` (`docker-compose.yml`) contenant les deux bases, avec un port publié sur `127.0.0.1` uniquement. `mmorpg_test` est créée par `docker/postgres/init/01-create-test-database.sql`, exécuté seulement au premier démarrage (volume vide). Identifiants : `POSTGRES_USER`, `POSTGRES_PASSWORD` (obligatoire) et `POSTGRES_PORT` dans le `.env`.
 
 > **Piège PostgreSQL 18 :** le volume de données doit être monté sur `/var/lib/postgresql`
 > (et non plus `/var/lib/postgresql/data` comme jusqu'à la version 17).
@@ -106,19 +113,37 @@ Les tests base de données ne doivent jamais toucher une autre base que `mmorpg_
    Le message d'erreur ne recopie jamais l'URL, qui contient un mot de passe.
 3. **Commandes séparées :** `npm test` reste sans base de données. Les tests base de données ont leur propre commande et leur propre configuration Vitest.
 
-Implémentation et tests de cette garde : DB-01.
+Implémentation : `tests/helpers/test-database.ts` (tests : `tests/unit/test-database-guard.test.ts`). `npm run test:db` (`vitest.db.config.ts`) applique la garde puis `prisma migrate deploy` sur `mmorpg_test` (`tests/database/global-setup.ts`) avant les tests de `tests/database/`. `TEST_DATABASE_URL` est lue dans l'environnement, sinon dans le `.env`, dont aucune autre clé n'est lue.
 
 ## 7. Suites
 
 | Ticket | Travail |
 |---|---|
-| DB-01 | Installation, Docker Compose, configuration Prisma, `DATABASE_URL` et `TEST_DATABASE_URL`, garde de la base de test, scripts npm |
+| DB-01 | Réalisé et vérifié avec Docker (section 8) |
 | DB-02, DB-03 | Modèle, première migration, seed idempotent (après SET-02 et SET-03) |
 | DB-04 | Repositories persistants, passage des identifiants en UUID |
 | QUAL-06 | Migrations et CLI en production, sauvegardes, arrêt propre |
+
+## 8. Commandes et premier démarrage
+
+Prérequis : Docker Desktop. Copier `.env.example` en `.env` et choisir un mot de passe (identique dans `POSTGRES_PASSWORD`, `DATABASE_URL` et `TEST_DATABASE_URL`).
+
+| Commande | Rôle |
+|---|---|
+| `npm run db:up` / `npm run db:down` | Démarrer (en attendant l'état *healthy*) / arrêter le conteneur ; les données restent dans le volume |
+| `npm run db:generate` | Régénérer le client Prisma |
+| `npm run db:migrate -- --name <nom>` | Créer et appliquer une migration en développement, puis `db:generate` |
+| `npm run db:status` | État des migrations |
+| `npm run db:reset` | Réinitialiser la base de développement (**destructif**) |
+| `npm run test:db` | Tests base de données sur `mmorpg_test` |
+
+Les migrations n'existent qu'à partir de DB-02 : jusque-là, `db:status` signale « No migration found » (code de sortie 1) et `migrate diff` ne peut pas s'exécuter (pas de `migration_lock.toml`). Ce n'est pas une erreur de connexion.
+
+Vérifications effectuées (DB-01, 2026-11-22), avec le résultat attendu : `db:up` (conteneur *healthy*), présence de `mmorpg_dev` et `mmorpg_test` en version 18.7, port publié sur `127.0.0.1` uniquement, `npm run dev` puis `GET /health` (200), `test:db` (3 tests), arrêt de la base puis `npm start` (erreur fatale propre), conservation des données après `db:down` / `db:up`. `db:status` se connecte bien à `mmorpg_dev`, mais renvoie le code 1 tant qu'aucune migration n'existe (voir ci-dessus).
 
 ## Historique
 
 | Date | Changement |
 |---|---|
 | 2026-11-20 | Création (SET-04) |
+| 2026-11-22 | Mise en place (DB-01) |

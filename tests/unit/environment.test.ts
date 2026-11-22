@@ -7,25 +7,28 @@ afterEach(() => {
     vi.unstubAllEnvs()
 })
 
-const DEFAULT_ENV = { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: 'info' }
+// DATABASE_URL est obligatoire hors test (DB-01) : chaque source la fournit, sauf dans les tests qui portent sur elle.
+const DATABASE_URL = 'postgresql://mmorpg:motdepasse@localhost:5432/mmorpg_dev'
+const REQUIRED_ENV = { DATABASE_URL }
+const DEFAULT_ENV = { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: 'info', DATABASE_URL }
 
 describe('parseEnvironment', () => {
     it("applique les valeurs par défaut quand aucune variable n'est définie", () => {
-        expect(parseEnvironment({})).toEqual({ success: true, env: DEFAULT_ENV })
+        expect(parseEnvironment({ ...REQUIRED_ENV })).toEqual({ success: true, env: DEFAULT_ENV })
     })
 
     it('convertit PORT en nombre et accepte un NODE_ENV valide', () => {
-        expect(parseEnvironment({ NODE_ENV: 'production', PORT: '4002' })).toEqual({
+        expect(parseEnvironment({ ...REQUIRED_ENV, NODE_ENV: 'production', PORT: '4002' })).toEqual({
             success: true,
-            env: { NODE_ENV: 'production', PORT: 4002, LOG_LEVEL: 'info' }
+            env: { NODE_ENV: 'production', PORT: 4002, LOG_LEVEL: 'info', DATABASE_URL }
         })
     })
 
 
     it.each(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])('accepte LOG_LEVEL=%s', (level) => {
-        expect(parseEnvironment({ LOG_LEVEL: level })).toEqual({
+        expect(parseEnvironment({ ...REQUIRED_ENV, LOG_LEVEL: level })).toEqual({
             success: true,
-            env: { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: level }
+            env: { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: level, DATABASE_URL }
         })
     })
 
@@ -38,11 +41,11 @@ describe('parseEnvironment', () => {
         { label: 'NODE_ENV inconnu', source: { NODE_ENV: 'prod' }, problem: expect.stringMatching(/^NODE_ENV : /) },
         { label: 'LOG_LEVEL inconnu', source: { LOG_LEVEL: 'verbose' }, problem: expect.stringMatching(/^LOG_LEVEL : /) }
     ])('refuse : $label', ({ source, problem }) => {
-        expect(parseEnvironment(source)).toEqual({ success: false, problems: [problem] })
+        expect(parseEnvironment({ ...REQUIRED_ENV, ...source })).toEqual({ success: false, problems: [problem] })
     })
 
     it('signale tous les problèmes à la fois', () => {
-        const result = parseEnvironment({ NODE_ENV: 'prod', PORT: '70000' })
+        const result = parseEnvironment({ ...REQUIRED_ENV, NODE_ENV: 'prod', PORT: '70000' })
 
         expect(result.success).toBe(false)
         if (!result.success) {
@@ -57,7 +60,7 @@ describe('parseEnvironment', () => {
     })
 
     it("ignore les variables qui ne concernent pas l'application", () => {
-        expect(parseEnvironment({ PATH: '/usr/bin', OTHER_VARIABLE: 'x' })).toEqual({
+        expect(parseEnvironment({ ...REQUIRED_ENV, PATH: '/usr/bin', OTHER_VARIABLE: 'x' })).toEqual({
             success: true,
             env: DEFAULT_ENV
         })
@@ -67,7 +70,7 @@ describe('parseEnvironment', () => {
         vi.stubEnv('PORT', 'abc')
         vi.stubEnv('NODE_ENV', 'production')
 
-        expect(parseEnvironment({})).toEqual({ success: true, env: DEFAULT_ENV })
+        expect(parseEnvironment({ ...REQUIRED_ENV })).toEqual({ success: true, env: DEFAULT_ENV })
     })
 
     it('ne modifie pas la source reçue', () => {
@@ -83,13 +86,14 @@ describe('parseEnvironment : CORS_ORIGINS (FND-08)', () => {
         { label: 'vide', value: '' },
         { label: "composée uniquement d'espaces", value: '   ' }
     ])('$label : non définie (comportement par défaut)', ({ value }) => {
-        const result = parseEnvironment({ CORS_ORIGINS: value })
+        const result = parseEnvironment({ ...REQUIRED_ENV, CORS_ORIGINS: value })
         expect(result).toEqual({ success: true, env: DEFAULT_ENV })
         expect(result.success && result.env.CORS_ORIGINS).toBeUndefined()
     })
 
     it('découpe la liste sur les virgules et ignore les espaces autour', () => {
         const result = parseEnvironment({
+            ...REQUIRED_ENV,
             CORS_ORIGINS: ' https://jeu.example.com , http://localhost:5173,https://[::1]:8080 '
         })
         expect(result).toEqual({
@@ -121,14 +125,14 @@ describe('parseEnvironment : CORS_ORIGINS (FND-08)', () => {
         { label: 'port par défaut', value: 'https://example.com:443', problem: NOT_NORMALIZED },
         { label: 'élément vide dans la liste', value: 'https://a.example.com,,https://b.example.com', problem: "l'origine n°2 est vide" }
     ])('refuse : $label', ({ value, problem }) => {
-        expect(parseEnvironment({ CORS_ORIGINS: value })).toEqual({
+        expect(parseEnvironment({ ...REQUIRED_ENV, CORS_ORIGINS: value })).toEqual({
             success: false,
             problems: [`CORS_ORIGINS : ${problem}`]
         })
     })
 
     it('signale chaque origine invalide, par sa position', () => {
-        const result = parseEnvironment({ CORS_ORIGINS: 'https://ok.example.com,*,https://example.com/' })
+        const result = parseEnvironment({ ...REQUIRED_ENV, CORS_ORIGINS: 'https://ok.example.com,*,https://example.com/' })
 
         expect(result.success).toBe(false)
         if (!result.success) {
@@ -140,7 +144,55 @@ describe('parseEnvironment : CORS_ORIGINS (FND-08)', () => {
     })
 
     it("ne recopie pas la valeur refusée dans le message d'erreur", () => {
-        const result = parseEnvironment({ CORS_ORIGINS: 'https://user:secret@example.com' })
+        const result = parseEnvironment({ ...REQUIRED_ENV, CORS_ORIGINS: 'https://user:secret@example.com' })
+
+        expect(result.success).toBe(false)
+        if (!result.success) {
+            expect(result.problems.join('\n')).not.toContain('secret')
+        }
+    })
+})
+describe('parseEnvironment : DATABASE_URL (DB-01)', () => {
+    it.each(['development', 'production'])('refuse son absence en %s', (nodeEnv) => {
+        expect(parseEnvironment({ NODE_ENV: nodeEnv })).toEqual({
+            success: false,
+            problems: [`DATABASE_URL : obligatoire en ${nodeEnv} (voir .env.example)`]
+        })
+    })
+
+    it('refuse son absence avec NODE_ENV par défaut (development)', () => {
+        expect(parseEnvironment({})).toEqual({
+            success: false,
+            problems: ['DATABASE_URL : obligatoire en development (voir .env.example)']
+        })
+    })
+
+    it('est facultative en test (les tests unitaires et HTTP n\'utilisent aucune base)', () => {
+        expect(parseEnvironment({ NODE_ENV: 'test' })).toEqual({
+            success: true,
+            env: { NODE_ENV: 'test', PORT: 4001, LOG_LEVEL: 'info' }
+        })
+    })
+
+    it('accepte le préfixe postgres://', () => {
+        const url = 'postgres://mmorpg:motdepasse@localhost:5432/mmorpg_dev'
+        const result = parseEnvironment({ DATABASE_URL: url })
+        expect(result.success && result.env.DATABASE_URL).toBe(url)
+    })
+
+    it.each([
+        { label: 'vide', value: '' },
+        { label: 'texte quelconque', value: 'pas-une-url' },
+        { label: 'autre protocole', value: 'mysql://mmorpg:motdepasse@localhost:3306/mmorpg_dev' }
+    ])('refuse une valeur invalide : $label', ({ value }) => {
+        expect(parseEnvironment({ DATABASE_URL: value })).toEqual({
+            success: false,
+            problems: ['DATABASE_URL : doit être une URL PostgreSQL (postgresql://utilisateur:motdepasse@hôte:port/base)']
+        })
+    })
+
+    it("ne recopie pas la valeur refusée dans le message d'erreur", () => {
+        const result = parseEnvironment({ DATABASE_URL: 'mysql://user:secret@localhost/base' })
 
         expect(result.success).toBe(false)
         if (!result.success) {

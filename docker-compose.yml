@@ -1,0 +1,26 @@
+# PostgreSQL local du projet (DB-01). Décisions : docs/architecture/database.md.
+# Identifiants lus dans le fichier .env (jamais versionné) ; modèle : .env.example.
+services:
+  postgres:
+    image: postgres:18.7
+    container_name: mmorpg-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mmorpg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD doit être définie dans .env}
+      POSTGRES_DB: mmorpg_dev
+    ports:
+      # Publié sur 127.0.0.1 uniquement : la base n'est pas accessible depuis le réseau.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 : le volume se monte sur /var/lib/postgresql (et non plus /var/lib/postgresql/data).
+      - mmorpg-pgdata:/var/lib/postgresql
+      # Scripts exécutés une seule fois, au premier démarrage (volume vide) : création de mmorpg_test.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d mmorpg_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mmorpg-pgdata:
