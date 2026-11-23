@@ -11,6 +11,10 @@ if (existsSync('.env')) {
 
 export default defineConfig({
     schema: 'prisma/schema.prisma',
-    migrations: { path: 'prisma/migrations' },
+    migrations: {
+        path: 'prisma/migrations',
+        // Seed des données de référence (DB-03) : npm run db:seed.
+        seed: 'tsx prisma/seed/index.ts'
+    },
     datasource: { url: process.env.DATABASE_URL }
 })

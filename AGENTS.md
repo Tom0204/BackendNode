@@ -23,6 +23,7 @@ Le serveur ne fait jamais confiance au client. Les règles du jeu, calculs (dég
 | `docs/architecture/current-state.md` | État initial du projet ; document historique qui peut être dépassé. |
 | `docs/architecture/backlog-adaptations.md` | Journal d'avancement : décisions, adaptations, fichiers modifiés et tests. |
 | `docs/architecture/database.md` | Décisions et mise en place de la base de données. |
+| `docs/architecture/data-model.md` | Modèle de données : tables, contraintes, politique de suppression, invariants. |
 | `docs/gameplay/mvp-scope.md`, `docs/gameplay/rules.md` | Parcours du MVP et règles de jeu chiffrées : référence obligatoire pour tout ticket de gameplay. |
 | `AGENTS.md` | Instructions communes aux agents IA. |
 | `CLAUDE.md` | Instructions complémentaires propres à Claude Code. |
@@ -135,7 +136,7 @@ Tests actuels :
 - Les tests doivent couvrir les cas nominaux, erreurs, limites et non-régressions.
 - `tests/database/` pour les tests utilisant PostgreSQL : exclusivement la base `mmorpg_test`, protégée par `tests/helpers/test-database.ts`, et lancés uniquement par `npm run test:db`.
 
-Dernier état connu : **260 tests validés après DB-01** (`npm test`, sans base). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
+Dernier état connu : **277 tests validés après DB-03** (`npm test`, sans base) et **38 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
 
 Commandes principales :
 
@@ -150,6 +151,7 @@ Commandes principales :
 | `npm run test:db` | Tests base de données (PostgreSQL démarré, `TEST_DATABASE_URL`). |
 | `npm run db:up` / `npm run db:down` | Démarrage / arrêt du conteneur PostgreSQL. |
 | `npm run db:generate`, `db:migrate`, `db:status`, `db:reset` | Client Prisma et migrations (`db:reset` est destructif). |
+| `npm run db:seed` | Données de référence (idempotent, à relancer après `db:reset`). |
 
 Avant de déclarer un ticket terminé, exécuter les vérifications adaptées, notamment le typecheck, les tests et le build. Ne jamais annoncer un test réussi s'il n'a pas réellement été exécuté.
 
@@ -165,6 +167,7 @@ Les tickets suivants sont validés :
 - SET-04.
 - SET-02 et SET-03.
 - DB-01.
+- DB-02 et DB-03.
 
 Derniers commits connus :
 - SET-04 : `ea106ef`.
@@ -176,7 +179,7 @@ FND-08 est **validé**, et non en attente de validation.
 
 État fonctionnel connu :
 - API de gestion des utilisateurs (CRUD en mémoire).
-- PostgreSQL et Prisma configurés (DB-01), sans modèle ni repository persistant (DB-02 à DB-04).
+- PostgreSQL et Prisma configurés (DB-01) ; modèle, migration `init` et données de référence en place (DB-02, DB-03) ; pas encore de repository persistant (DB-04).
 - Pas encore d'authentification.
 - Pas encore de Front-End.
 

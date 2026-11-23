@@ -1,6 +1,7 @@
 # Base de données (SET-04)
 
 > **Statut :** décisions approuvées par le propriétaire du projet (SET-04, 2026-11-20), mises en place par DB-01 (2026-11-22).
+> Modèle relationnel, première migration et seed : DB-02 et DB-03 (2026-11-23), détaillés dans `docs/architecture/data-model.md`.
 > Vérifications avec Docker Desktop effectuées le 2026-11-22 (voir section 8).
 
 ## 1. Besoins et choix
@@ -84,7 +85,10 @@ Règles :
 - outil : Prisma Migrate. Les migrations (`prisma/migrations/`) sont **versionnées dans Git** ;
 - une migration appliquée ailleurs que sur sa machine n'est jamais modifiée : on en crée une nouvelle ;
 - `prisma db push` est interdit : il ne laisse aucun historique ;
-- suppression ou renommage d'une colonne contenant des données : ajouter, copier, puis supprimer dans une migration ultérieure.
+- suppression ou renommage d'une colonne contenant des données : ajouter, copier, puis supprimer dans une migration ultérieure ;
+- contraintes que Prisma ne sait pas décrire (`CHECK`) : créer la migration avec `npx prisma migrate dev --create-only --name <nom>`, ajouter le SQL à la fin du fichier, puis l'appliquer avec `npx prisma migrate dev`. Les documenter dans `data-model.md`.
+
+Migration existante : `20261123092444_init` (DB-03), qui crée toutes les tables de `data-model.md` et leurs `CHECK`.
 
 | Environnement | Commandes | Interdit |
 |---|---|---|
@@ -92,9 +96,10 @@ Règles :
 | Test | `npx prisma migrate deploy`, lancé uniquement par le script de test qui applique la protection (section 6) | `migrate dev`, `reset`, `db push` |
 | Production | `npx prisma migrate deploy` comme étape de déploiement, **après une sauvegarde** et avant le démarrage du serveur ; `npx prisma migrate status` | `migrate dev`, `reset`, `db push` |
 
-Contrôle de cohérence entre le schéma et les migrations :
-`npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code`
-(code 2 : écart à corriger par une nouvelle migration).
+Contrôle de cohérence entre le schéma et une base construite par les migrations (`mmorpg_dev`, après `db:migrate`) :
+`npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code`
+(code 0 : aucun écart ; code 2 : écart à corriger par une nouvelle migration).
+Avec Prisma 7, la comparaison directe à partir du dossier (`--from-migrations`) exige une base « shadow » déclarée (`datasource.shadowDatabaseUrl`), non configurée dans ce projet.
 
 Point ouvert, à traiter dans QUAL-06 : la CLI `prisma` est une dépendance de développement, absente d'une installation `npm ci --omit=dev`.
 
@@ -113,14 +118,14 @@ Les tests base de données ne doivent jamais toucher une autre base que `mmorpg_
    Le message d'erreur ne recopie jamais l'URL, qui contient un mot de passe.
 3. **Commandes séparées :** `npm test` reste sans base de données. Les tests base de données ont leur propre commande et leur propre configuration Vitest.
 
-Implémentation : `tests/helpers/test-database.ts` (tests : `tests/unit/test-database-guard.test.ts`). `npm run test:db` (`vitest.db.config.ts`) applique la garde puis `prisma migrate deploy` sur `mmorpg_test` (`tests/database/global-setup.ts`) avant les tests de `tests/database/`. `TEST_DATABASE_URL` est lue dans l'environnement, sinon dans le `.env`, dont aucune autre clé n'est lue.
+Implémentation : `tests/helpers/test-database.ts` (tests : `tests/unit/test-database-guard.test.ts`). `npm run test:db` (`vitest.db.config.ts`) applique la garde, puis `prisma migrate deploy` et le seed des données de référence sur `mmorpg_test` (`tests/database/global-setup.ts`), avant les tests de `tests/database/`. Les données de joueurs nécessaires aux tests sont créées et supprimées par les tests (`tests/helpers/player-fixtures.ts`). `TEST_DATABASE_URL` est lue dans l'environnement, sinon dans le `.env`, dont aucune autre clé n'est lue.
 
 ## 7. Suites
 
 | Ticket | Travail |
 |---|---|
 | DB-01 | Réalisé et vérifié avec Docker (section 8) |
-| DB-02, DB-03 | Modèle, première migration, seed idempotent (après SET-02 et SET-03) |
+| DB-02, DB-03 | Réalisés : modèle, migration `init`, seed idempotent (`data-model.md`, section 8 ci-dessous) |
 | DB-04 | Repositories persistants, passage des identifiants en UUID |
 | QUAL-06 | Migrations et CLI en production, sauvegardes, arrêt propre |
 
@@ -133,13 +138,16 @@ Prérequis : Docker Desktop. Copier `.env.example` en `.env` et choisir un mot d
 | `npm run db:up` / `npm run db:down` | Démarrer (en attendant l'état *healthy*) / arrêter le conteneur ; les données restent dans le volume |
 | `npm run db:generate` | Régénérer le client Prisma |
 | `npm run db:migrate -- --name <nom>` | Créer et appliquer une migration en développement, puis `db:generate` |
+| `npm run db:seed` | Mettre à jour les données de référence (`prisma/seed/`), sans doublon ni suppression ; à relancer après chaque migration qui en a besoin |
 | `npm run db:status` | État des migrations |
 | `npm run db:reset` | Réinitialiser la base de développement (**destructif**) |
 | `npm run test:db` | Tests base de données sur `mmorpg_test` |
 
-Les migrations n'existent qu'à partir de DB-02 : jusque-là, `db:status` signale « No migration found » (code de sortie 1) et `migrate diff` ne peut pas s'exécuter (pas de `migration_lock.toml`). Ce n'est pas une erreur de connexion.
+Premier démarrage d'une base vide : `npm run db:up`, `npm run db:migrate` (applique la migration `init`), puis `npm run db:seed`.
 
-Vérifications effectuées (DB-01, 2026-11-22), avec le résultat attendu : `db:up` (conteneur *healthy*), présence de `mmorpg_dev` et `mmorpg_test` en version 18.7, port publié sur `127.0.0.1` uniquement, `npm run dev` puis `GET /health` (200), `test:db` (3 tests), arrêt de la base puis `npm start` (erreur fatale propre), conservation des données après `db:down` / `db:up`. `db:status` se connecte bien à `mmorpg_dev`, mais renvoie le code 1 tant qu'aucune migration n'existe (voir ci-dessus).
+Réinitialiser la base locale de développement (**destructif**, toutes les données sont perdues) : `npm run db:reset`, puis `npm run db:seed`. Avec Prisma 7, `migrate reset` ne relance pas le seed. Pour repartir d'un conteneur entièrement vide, `docker compose down -v` supprime aussi le volume, donc les deux bases. Ces commandes sont à lancer par le développeur : la CLI Prisma refuse `migrate reset` lancé par un agent IA sans accord explicite.
+
+Vérifications effectuées (DB-01, 2026-11-22), avec le résultat attendu : `db:up` (conteneur *healthy*), présence de `mmorpg_dev` et `mmorpg_test` en version 18.7, port publié sur `127.0.0.1` uniquement, `npm run dev` puis `GET /health` (200), `test:db` (3 tests), arrêt de la base puis `npm start` (erreur fatale propre), conservation des données après `db:down` / `db:up`. À cette date, sans migration, `db:status` renvoyait le code 1 ; depuis DB-03, il répond « Database schema is up to date » (code 0).
 
 ## Historique
 
@@ -147,3 +155,4 @@ Vérifications effectuées (DB-01, 2026-11-22), avec le résultat attendu : `db:
 |---|---|
 | 2026-11-20 | Création (SET-04) |
 | 2026-11-22 | Mise en place (DB-01) |
+| 2026-11-23 | Migration `init`, seed, contrôle de cohérence adapté à Prisma 7 (DB-02, DB-03) |

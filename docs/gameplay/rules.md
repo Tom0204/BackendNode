@@ -20,16 +20,17 @@
 | Attaque | Puissance de l'attaque de base |
 | Défense | Réduit les dégâts reçus |
 | Vitesse | Détermine qui joue en premier |
-| Critique | Chance en % ; affichée mais **non appliquée** au MVP (COMBAT-05) |
 
-| Classe | PV | Mana | Attaque | Défense | Vitesse | Critique |
-|---|---|---|---|---|---|---|
-| Guerrier, niveau 1 | 120 | 20 | 12 | 8 | 8 | 5 % |
-| Guerrier, gain par niveau | +12 | +2 | +2 | +2 | +1 | 0 |
-| Mage, niveau 1 | 80 | 100 | 10 | 4 | 10 | 5 % |
-| Mage, gain par niveau | +8 | +10 | +2 | +1 | +1 | 0 |
-| Voleur, niveau 1 | 95 | 40 | 11 | 6 | 14 | 10 % |
-| Voleur, gain par niveau | +10 | +4 | +2 | +1 | +2 | 0 |
+Les coups critiques ne font pas partie du MVP : il n'existe pas de statistique de critique. Elle sera définie, avec son multiplicateur, par COMBAT-05.
+
+| Classe | PV | Mana | Attaque | Défense | Vitesse |
+|---|---|---|---|---|---|
+| Guerrier, niveau 1 | 120 | 20 | 12 | 8 | 8 |
+| Guerrier, gain par niveau | +12 | +2 | +2 | +2 | +1 |
+| Mage, niveau 1 | 80 | 100 | 10 | 4 | 10 |
+| Mage, gain par niveau | +8 | +10 | +2 | +1 | +1 |
+| Voleur, niveau 1 | 95 | 40 | 11 | 6 | 14 |
+| Voleur, gain par niveau | +10 | +4 | +2 | +1 | +2 |
 
 Formule : `stat(niveau) = base + gain × (niveau − 1)`.
 Exemple : un guerrier de niveau 5 a 120 + 12 × 4 = **168 PV** et 12 + 2 × 4 = **20 d'attaque**.
@@ -136,10 +137,11 @@ Les trois objets sont des matériaux empilables, sans effet au MVP.
 |---|---|
 | Capacité de l'inventaire et taille maximale d'une pile | ITEM-02 |
 | Stratégie JWT ou sessions | AUTH-05 |
-| Multiplicateur de critique, conditions de fuite | COMBAT-05, COMBAT-13 (hors MVP) |
+| Statistique et multiplicateur de critique, conditions de fuite | COMBAT-05, COMBAT-13 (hors MVP) |
 
 ## Historique
 
 | Date | Changement |
 |---|---|
 | 2026-11-22 | Création (SET-03) |
+| 2026-11-23 | Statistique de critique retirée du MVP, reportée à COMBAT-05 (validation de DB-02) |

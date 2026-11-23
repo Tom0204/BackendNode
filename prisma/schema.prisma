@@ -1,5 +1,13 @@
-// Schéma Prisma (DB-01). Les modèles arrivent avec DB-02.
+// Schéma Prisma : modèle relationnel initial (DB-02).
+// Documentation complète (ERD, contraintes, suppressions) : docs/architecture/data-model.md.
 // L'URL de connexion est déclarée dans prisma.config.ts (Prisma 7).
+//
+// Conventions :
+// - identifiants UUID v7 générés par PostgreSQL 18 (uuidv7()), type uuid natif ;
+// - modèles Prisma en PascalCase, tables et colonnes en snake_case ;
+// - dates en timestamptz ;
+// - les contraintes CHECK (bornes, formats, normalisation) ne sont pas exprimables ici :
+//   elles sont écrites dans les migrations SQL et listées dans data-model.md.
 
 generator client {
   provider = "prisma-client"
@@ -8,4 +16,163 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Données des joueurs
+// ---------------------------------------------------------------------------
+
+/// Compte joueur. Mot de passe, rôle et états de compte : AUTH-01.
+model User {
+  id         String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name       String
+  /// Toujours en minuscules (CHECK) : l'unicité ne dépend pas de la casse.
+  email      String      @unique
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  characters Character[]
+
+  @@map("users")
+}
+
+/// Personnage d'un joueur. Les statistiques ne sont pas stockées : elles se calculent
+/// à partir de la classe et du niveau (rules.md §2, STAT-01).
+model Character {
+  id             String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId         String         @map("user_id") @db.Uuid
+  classId        String         @map("class_id") @db.Uuid
+  /// Obligatoire : la création d'un personnage lui attribue la zone de départ (Clairière).
+  currentZoneId  String         @map("current_zone_id") @db.Uuid
+  /// 3 à 16 lettres A–Z ou a–z (CHECK).
+  name           String
+  /// lower(name) (CHECK) : rend le nom unique sans tenir compte de la casse.
+  normalizedName String         @unique @map("normalized_name")
+  /// 1 à 10 (CHECK).
+  level          Int            @default(1)
+  /// XP acquise dans le niveau courant, ≥ 0 (CHECK).
+  experience     Int            @default(0)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  // Suppression du compte : ses personnages sont supprimés (cascade).
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Données de référence utilisées : suppression refusée (restriction).
+  characterClass CharacterClass @relation(fields: [classId], references: [id], onDelete: Restrict)
+  currentZone    Zone           @relation(fields: [currentZoneId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([classId])
+  @@index([currentZoneId])
+  @@map("characters")
+}
+
+// ---------------------------------------------------------------------------
+// Données de référence (rules.md §2 et §8), remplies par le seed (prisma/seed)
+// ---------------------------------------------------------------------------
+
+/// Classe jouable : statistiques de niveau 1 et gain par niveau (rules.md §2).
+model CharacterClass {
+  id              String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  /// Identifiant stable, utilisé par le seed (warrior, mage, rogue).
+  code            String      @unique
+  name            String
+  baseHp          Int         @map("base_hp")
+  baseMana        Int         @map("base_mana")
+  baseAttack      Int         @map("base_attack")
+  baseDefense     Int         @map("base_defense")
+  baseSpeed       Int         @map("base_speed")
+  hpPerLevel      Int         @map("hp_per_level")
+  manaPerLevel    Int         @map("mana_per_level")
+  attackPerLevel  Int         @map("attack_per_level")
+  defensePerLevel Int         @map("defense_per_level")
+  speedPerLevel   Int         @map("speed_per_level")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  characters      Character[]
+
+  @@map("character_classes")
+}
+
+/// Zone du monde (rules.md §8). Zone de départ : code « clearing ».
+model Zone {
+  id         String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  code       String        @unique
+  name       String
+  /// Plage de niveaux conseillée : 1 ≤ min_level ≤ max_level (CHECK).
+  minLevel   Int           @map("min_level")
+  maxLevel   Int           @map("max_level")
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  characters Character[]
+  monsters   ZoneMonster[]
+
+  @@map("zones")
+}
+
+/// Modèle de monstre (rules.md §8). Les instances combattues relèvent de COMBAT-02.
+model Monster {
+  id        String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  code      String        @unique
+  name      String
+  level     Int
+  hp        Int
+  attack    Int
+  defense   Int
+  speed     Int
+  /// XP fixe attribuée en cas de victoire (rules.md §7).
+  xpReward  Int           @map("xp_reward")
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  zones     ZoneMonster[]
+  loot      LootEntry?
+
+  @@map("monsters")
+}
+
+/// Monstres présents dans une zone.
+model ZoneMonster {
+  zoneId    String  @map("zone_id") @db.Uuid
+  monsterId String  @map("monster_id") @db.Uuid
+  // Une zone ou un monstre encore associé ne peut pas être supprimé (restriction).
+  zone      Zone    @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  monster   Monster @relation(fields: [monsterId], references: [id], onDelete: Restrict)
+
+  @@id([zoneId, monsterId])
+  @@index([monsterId])
+  @@map("zone_monsters")
+}
+
+/// Type d'objet. Seuls des matériaux existent au MVP (rules.md §8).
+enum ItemType {
+  MATERIAL
+
+  @@map("item_type")
+}
+
+/// Définition d'un objet (rules.md §8). Les exemplaires possédés relèvent d'ITEM-02.
+model Item {
+  id          String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  code        String      @unique
+  name        String
+  type        ItemType
+  stackable   Boolean
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  lootEntries LootEntry[]
+
+  @@map("items")
+}
+
+/// Butin d'un monstre : au plus un objet par monstre, en quantité 1 (rules.md §7).
+model LootEntry {
+  /// Clé primaire : un seul objet possible par monstre.
+  monsterId    String  @id @map("monster_id") @db.Uuid
+  itemId       String  @map("item_id") @db.Uuid
+  /// Probabilité en points de base : 0 à 10 000 (CHECK) ; 5 000 = 0,5.
+  dropChanceBp Int     @map("drop_chance_bp")
+  // Un monstre ou un objet utilisé par une entrée de butin ne peut pas être supprimé (restriction).
+  monster      Monster @relation(fields: [monsterId], references: [id], onDelete: Restrict)
+  item         Item    @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([itemId])
+  @@map("loot_entries")
 }

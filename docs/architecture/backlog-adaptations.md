@@ -1,6 +1,6 @@
 # Adaptations par rapport au backlog initial
 
-Dernière mise à jour : 2026-11-22
+Dernière mise à jour : 2026-11-23
 
 Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du dépôt. Ce fichier recense les écarts décidés par rapport à lui, avec leur raison.
 
@@ -24,7 +24,9 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du d�
 | SET-04 | Validé (voir `docs/architecture/database.md`) | `ea106ef` |
 | SET-02 | Validé (voir `docs/gameplay/mvp-scope.md`) | — |
 | SET-03 | Validé (voir `docs/gameplay/rules.md`) | — |
-| DB-01 | Réalisé et vérifié avec Docker | — |
+| DB-01 | Réalisé et vérifié avec Docker | `f858ab4` |
+| DB-02 | Réalisé (voir `docs/architecture/data-model.md`) | — |
+| DB-03 | Réalisé (migration `init`, seed des données de référence) | — |
 
 ## Ordre de réalisation
 
@@ -32,7 +34,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 
 1. FND-01 et FND-02 ont été réalisés avant SET-02, SET-03, SET-04 et SET-05, car ils ne dépendent que de SET-01.
 2. Ordre retenu ensuite : SET-05 (avec la clôture de SET-01) → FND-03 → FND-04 → FND-06 → FND-07 → FND-09, FND-05, FND-08.
-3. SET-02, SET-03 et SET-04 sont réalisés. DB-01 a été réalisé dans le même lot que SET-02 et SET-03 (indépendant d'eux).
+3. SET-02, SET-03 et SET-04 sont réalisés. DB-01 a été réalisé dans le même lot que SET-02 et SET-03 (indépendant d'eux). DB-02 et DB-03 ont été réalisés ensemble.
 
 ## Tickets additionnels réalisés
 
@@ -561,6 +563,7 @@ Parcours du MVP : `docs/gameplay/mvp-scope.md`. Règles chiffrées : `docs/gamep
 | STAT-05 | Hors MVP : PV et mana remis au maximum après chaque combat | Pas de soins ni de régénération au MVP |
 | SET-02, SET-03 | Aucun test automatisé ni requête Postman | Tickets de documentation, sans modification du code |
 | CHAR-01 | `GET /classes` (et le détail d'une classe) est **public** : pas d'authentification, pas de dépendance à AUTH-07 (décision du 2026-11-22) | Donnée de référence sans propriétaire ; cohérent avec les dépendances et critères de CHAR-01 |
+| SET-03 (G2) | Statistique de critique retirée du MVP le 2026-11-23, à la validation de DB-02 : supprimée de `rules.md` et du modèle, reportée à COMBAT-05 | Le MVP ne prévoit pas de coups critiques ; une statistique inutilisée aurait été stockée sans règle |
 | AUTH-07 | **Point à traiter :** clarifier dans `docs/api/conventions.md` la distinction entre routes publiques et routes protégées, et préciser la portée de la phrase de la section 7 (« chaque accès vérifie […] l'authentification »), qui vise les ressources propres aux joueurs | La convention actuelle ne liste pas les routes publiques |
 
 ## Initialisation de la base (DB-01)
@@ -621,6 +624,57 @@ Les autres alertes de `npm audit` (`esbuild`, `minimatch` via `nodemon`) existai
 - Vérifié aussi : `npx vitest run --sequence.shuffle`, `npm run build`, démarrage du serveur compilé et de `tsx` sans base (ECONNREFUSED), hôte introuvable, `DATABASE_URL` absente ou invalide, refus de `test:db` (URL absente, autre base, hôte distant, paramètres) ; aucun mot de passe dans les sorties.
 - `tests/database/connection.test.ts` : connexion, base `mmorpg_test`, génération d'un UUID v7 : 3/3 avec `npm run test:db`.
 - Vérifié avec Docker Desktop : conteneur `postgres:18.7` *healthy*, bases `mmorpg_dev` et `mmorpg_test` créées, port publié sur `127.0.0.1` uniquement, volume sur `/var/lib/postgresql`, `db:status` connecté, serveur démarré (`tsx` et build) avec `GET /health` à 200, base arrêtée puis `npm start` : `ECONNREFUSED` et code 1, données conservées après `db:down` puis `db:up`.
+
+## Modèle de données, migration et seed (DB-02, DB-03)
+
+Réalisés dans un même lot : la migration et le seed (DB-03) sont nécessaires pour vérifier le modèle (DB-02) sur une vraie base. Détails : `docs/architecture/data-model.md` ; commandes : `docs/architecture/database.md` (sections 5 et 8).
+
+### Décisions validées
+
+| # | Décision |
+|---|---|
+| D1 | Modèle : `users`, `characters`, et les données de référence du MVP (`character_classes`, `zones`, `monsters`, `zone_monsters`, `items`, `loot_entries`). Hors périmètre : instances de monstres, combats, inventaire, portefeuille |
+| D2 | Données de référence : UUID v7 et `code` unique stable, clé du seed |
+| D3 | Nom de personnage unique sans tenir compte de la casse : `normalized_name` unique et `CHECK (normalized_name = lower(name))` |
+| D4 | Statistiques calculées (classe et niveau), non stockées ; pas de PV courants au MVP |
+| D5 | Suppression : cascade de `users` vers `characters` ; restriction pour toutes les données de référence utilisées, y compris par `zone_monsters` et `loot_entries` |
+| D6 | Invariants en base par des `CHECK` écrits dans la migration (liste dans `data-model.md` §4) |
+| D7 | Données de référence dans `prisma/seed/reference-data.ts`, vérifiées contre les tableaux de `rules.md` |
+| D8 | Seed : mise à jour ou création selon le `code`, dans une transaction, sans suppression |
+| D9 | Pas de données de démonstration ; les tests créent et suppriment leurs propres joueurs |
+
+Corrections demandées à la validation : pas de statistique de critique dans `character_classes` (hors MVP) ; email unique sans tenir compte de la casse (`CHECK (email = lower(email))`) ; `current_zone_id` obligatoire (la création d'un personnage attribue la Clairière : responsabilité de DB-04 et CHAR-03) ; restriction cohérente pour `zone_monsters` et `loot_entries`.
+
+### Adaptations
+
+| Ticket | Adaptation | Raison | Reprise |
+|---|---|---|---|
+| WORLD-01, WORLD-02, WORLD-03, ITEM-01, REWARD-01 | Tables de référence créées et remplies dès DB-02/DB-03 | Nécessaires au seed de DB-03 (« classes, monstres ») ; valeurs déjà fixées par `rules.md` | Ces tickets gardent repositories, services, endpoints et colonnes éventuelles |
+| REWARD-01 | `loot_entries` : un seul objet par monstre (clé primaire `monster_id`), sans quantité stockée | Exactement la règle de `rules.md` §7 (au plus un objet, quantité 1) | Quantités ou objets multiples : nouvelle migration |
+| WORLD-01 | Pas de description ni de condition d'accès pour les zones | Non prévues par `rules.md` | WORLD-01 |
+| DB-04, AUTH-01 | Email écrit en minuscules ; `normalized_name` et zone de départ (`STARTING_ZONE_CODE`) remplis par les repositories | Contraintes `CHECK` et `current_zone_id` obligatoire | DB-04, CHAR-03 |
+| `database.md` §5 | Contrôle de cohérence par `migrate diff --from-config-datasource` au lieu de `--from-migrations` | Prisma 7 exige une base « shadow » déclarée pour `--from-migrations` | — |
+| Seed en production | Exécuté par `tsx` (dépendance de développement) | Procédure de déploiement non définie | QUAL-06 |
+
+### Fichiers créés ou modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `prisma/schema.prisma` | 8 modèles et l'enum `ItemType` |
+| `prisma/migrations/20261123092444_init/migration.sql`, `prisma/migrations/migration_lock.toml` | Première migration, avec 10 contraintes `CHECK` ajoutées à la main |
+| `prisma/seed/reference-data.ts`, `prisma/seed/seed.ts`, `prisma/seed/index.ts` | Données de référence, seed idempotent, point d'entrée de `npm run db:seed` |
+| `prisma.config.ts`, `package.json`, `tsconfig.json` | Commande de seed, script `db:seed`, inclusion de `prisma/**/*.ts` |
+| `tests/database/global-setup.ts` | Seed des données de référence après les migrations, sur `mmorpg_test` |
+| `tests/helpers/player-fixtures.ts` | Données de joueurs des tests et lecture des erreurs de contraintes |
+| `tests/unit/reference-data.test.ts`, `tests/database/schema-constraints.test.ts`, `tests/database/seed.test.ts` | Tests |
+| `docs/architecture/data-model.md` (nouveau), `database.md`, `AGENTS.md` | Documentation |
+
+### Tests : 277 sans base (`npm test`), 38 avec base (`npm run test:db`)
+
+- `tests/unit/reference-data.test.ts` (17) : concordance des données du seed avec les tableaux de `rules.md` (lus dans le fichier), codes uniques, références valides, bornes des `CHECK`.
+- `tests/database/schema-constraints.test.ts` (30) : UUID v7, email en minuscules et unique, nom unique sans casse, format du nom, niveau, XP, zone obligatoire, cascade, restrictions (code `23001`), `CHECK` des données de référence, un seul butin par monstre. Les écritures refusées sont faites dans des transactions annulées : aucune donnée de référence ne peut être supprimée par erreur.
+- `tests/database/seed.test.ts` (5) : seed relancé sans doublon, identifiants conservés, valeurs remises, valeurs conformes, données de joueurs intactes.
+- Vérifié aussi : `prisma validate`, migration appliquée sur `mmorpg_dev` et `mmorpg_test`, `db:status` à jour (code 0), aucun écart entre la base migrée et le schéma, `npm run db:seed` lancé deux fois (3 classes, 1 zone, 3 monstres, 3 affectations, 3 objets, 3 butins), ordre aléatoire, build.
 
 ## Décisions de fonctionnement
 
