@@ -33,10 +33,11 @@ describe('validateRequest', () => {
     })
 
     it('valide les paramètres de chemin sans les convertir', () => {
-        const { req, next } = runValidation({ params: userIdParamsSchema }, { params: { id: '1' } })
+        const id = '0193a5f4-2b3c-7d4e-9f50-617283940a1b'
+        const { req, next } = runValidation({ params: userIdParamsSchema }, { params: { id } })
 
         expect(next).toHaveBeenCalledWith()
-        expect(req.params.id).toBe('1')
+        expect(req.params.id).toBe(id)
     })
 
     it('signale chaque champ manquant, sans remplacer le corps', () => {
@@ -74,11 +75,11 @@ describe('validateRequest', () => {
         })
     })
 
-    it('refuse un identifiant non numérique (non-régression de FND-04)', () => {
-        const { error } = runValidation({ params: userIdParamsSchema }, { params: { id: 'abc' } })
+    it.each(['abc', '1'])('refuse un identifiant qui n’est pas un UUID : %s (non-régression de FND-04, UUID depuis DB-04)', (id) => {
+        const { error } = runValidation({ params: userIdParamsSchema }, { params: { id } })
         expect(error).toMatchObject({
             code: 'VALIDATION_ERROR',
-            details: [{ field: 'id', message: 'Must be a positive integer' }]
+            details: [{ field: 'id', message: 'Must be a valid UUID' }]
         })
     })
 

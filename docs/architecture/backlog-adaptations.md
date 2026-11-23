@@ -25,8 +25,9 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du d�
 | SET-02 | Validé (voir `docs/gameplay/mvp-scope.md`) | — |
 | SET-03 | Validé (voir `docs/gameplay/rules.md`) | — |
 | DB-01 | Réalisé et vérifié avec Docker | `f858ab4` |
-| DB-02 | Réalisé (voir `docs/architecture/data-model.md`) | — |
-| DB-03 | Réalisé (migration `init`, seed des données de référence) | — |
+| DB-02 | Réalisé (voir `docs/architecture/data-model.md`) | `d6285f5` |
+| DB-03 | Réalisé (migration `init`, seed des données de référence) | `d6285f5` |
+| DB-04 | Réalisé (repositories persistants) | — |
 
 ## Ordre de réalisation
 
@@ -34,7 +35,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 
 1. FND-01 et FND-02 ont été réalisés avant SET-02, SET-03, SET-04 et SET-05, car ils ne dépendent que de SET-01.
 2. Ordre retenu ensuite : SET-05 (avec la clôture de SET-01) → FND-03 → FND-04 → FND-06 → FND-07 → FND-09, FND-05, FND-08.
-3. SET-02, SET-03 et SET-04 sont réalisés. DB-01 a été réalisé dans le même lot que SET-02 et SET-03 (indépendant d'eux). DB-02 et DB-03 ont été réalisés ensemble.
+3. SET-02, SET-03 et SET-04 sont réalisés. DB-01 a été réalisé dans le même lot que SET-02 et SET-03 (indépendant d'eux). DB-02 et DB-03 ont été réalisés ensemble, puis DB-04.
 
 ## Tickets additionnels réalisés
 
@@ -675,6 +676,52 @@ Corrections demandées à la validation : pas de statistique de critique dans `c
 - `tests/database/schema-constraints.test.ts` (30) : UUID v7, email en minuscules et unique, nom unique sans casse, format du nom, niveau, XP, zone obligatoire, cascade, restrictions (code `23001`), `CHECK` des données de référence, un seul butin par monstre. Les écritures refusées sont faites dans des transactions annulées : aucune donnée de référence ne peut être supprimée par erreur.
 - `tests/database/seed.test.ts` (5) : seed relancé sans doublon, identifiants conservés, valeurs remises, valeurs conformes, données de joueurs intactes.
 - Vérifié aussi : `prisma validate`, migration appliquée sur `mmorpg_dev` et `mmorpg_test`, `db:status` à jour (code 0), aucun écart entre la base migrée et le schéma, `npm run db:seed` lancé deux fois (3 classes, 1 zone, 3 monstres, 3 affectations, 3 objets, 3 butins), ordre aléatoire, build.
+
+## Repositories persistants (DB-04)
+
+Les accès à la base passent uniquement par les repositories Prisma ; les services reçoivent leur repository (injection par fonctions de construction), ce qui permet aux tests d'en fournir un contrôlé.
+
+### Décisions validées
+
+| # | Décision |
+|---|---|
+| D1 | Repository des personnages créé sans service ni endpoint (`create`, `findById`, `findAllByUserId`, `countByUserId`) ; `create` remplit `normalized_name = lower(name)` et la zone de départ |
+| D2 | Injection : `createUserService(repository)`, `createUserController(service)`, `createUserRoutes(controller)`, `createApp({ userService })` ; `server.ts` assemble la version Prisma |
+| D3 | Repository en mémoire **dans `tests/helpers/` uniquement** ; une suite de contrat commune vérifie qu'il se comporte comme le repository Prisma |
+| D4 | Unicité garantie par la base (plus de lecture préalable) : `P2002` → `UniqueConstraintError` → 409 ; introuvable (`P2025`) → `undefined` / `false` → 404 |
+| D5 | Identifiants UUID dans l'API (`z.uuid()`) : un autre format donne 400 |
+| D6 | Email mis en minuscules par le service ; le contrôle existant (chaîne non vide) est conservé |
+| D7 | Contrat de réponse inchangé (`id`, `name`, `email`) ; tri explicite par `createdAt`, puis `id` |
+| D8 | `asyncHandler` : les erreurs des handlers asynchrones atteignent le gestionnaire centralisé (Express 4) |
+| D9 | Plus d'utilisateurs initiaux : la base démarre vide |
+
+### Adaptations
+
+| Élément | Adaptation | Raison | Reprise |
+|---|---|---|---|
+| `src/config/gameplay.ts` | `STARTING_ZONE_CODE` y est défini ; `prisma/seed/reference-data.ts` le réexporte | Une seule définition, utilisée par le code applicatif et par le seed | — |
+| `src/repositories/errors.ts` | Erreurs métier reconnues par leur propriété `kind`, pas par `instanceof` | Fiable avec des modules rechargés (`vi.resetModules`) et des repositories de test | — |
+| Erreurs `CHECK` (nom, email non normalisé) | Non traduites par les repositories | Les données sont validées avant l'appel (Zod, service) ; une violation est une erreur de programmation (500) | CHAR-03 (validation du nom) |
+| Fermeture du pool à l'arrêt | Non gérée | Arrêt propre du serveur | QUAL-06 |
+| `tests/helpers/errors.ts` | `captureError` (synchrone) remplacé par `rejectionOf` (promesses) | Le service est désormais asynchrone | — |
+
+### Fichiers créés ou modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `src/repositories/user.repository.ts`, `src/repositories/character.repository.ts`, `src/repositories/errors.ts` | Interfaces, implémentations Prisma, traduction des erreurs |
+| `src/types/user.ts`, `src/types/character.ts`, `src/config/gameplay.ts` | Types métier, constante de zone de départ |
+| `src/services/user.service.ts`, `src/controllers/user.controller.ts`, `src/routes/user.routes.ts`, `src/routes/index.ts`, `src/app.ts`, `server.ts` | Fonctions de construction, asynchrone, DTO, assemblage |
+| `src/utils/async-handler.ts`, `src/schemas/user.schema.ts` | Relais des erreurs asynchrones ; identifiant UUID |
+| `tests/helpers/in-memory-user-repository.ts`, `tests/helpers/user-repository-contract.ts`, `tests/helpers/fresh-modules.ts`, `tests/helpers/errors.ts` | Repository contrôlé, contrat, application de test |
+| Tests unitaires et d'intégration adaptés ou ajoutés ; `tests/database/user.repository.test.ts`, `character.repository.test.ts`, `users-api.test.ts` | Voir ci-dessous |
+| `docs/api/conventions.md` (§1.3, §15, §16), `data-model.md`, `database.md`, `AGENTS.md` | Documentation |
+
+### Tests : 302 sans base (`npm test`), 61 avec base (`npm run test:db`)
+
+- Sans base : contrat sur le repository en mémoire (9), `asyncHandler` (3), service (21, asynchrone, UUID, email en minuscules), API `/users` (31, dont 400 sur un identifiant non UUID, 409 sans casse, 500 sur une erreur asynchrone), validation (UUID).
+- Avec base : contrat sur Prisma (9) et spécificités PostgreSQL (3) ; personnages (9 : zone de départ, `normalized_name`, nom unique sans casse, références inexistantes, tri, comptage, cascade) ; API sur PostgreSQL (2) avec **deux instances d'application indépendantes** (modules rechargés, nouveau pool et nouveau client, première connexion fermée) : les données créées par la première sont relues par la seconde.
+- Vérifié aussi : aucune référence à Prisma dans `src/services`, `src/controllers` et `src/routes` ; schéma et base migrée sans écart ; test manuel avec `npm run dev` (création, arrêt, redémarrage, relecture, puis suppression de l'utilisateur de test).
 
 ## Décisions de fonctionnement
 

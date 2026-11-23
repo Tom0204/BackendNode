@@ -43,6 +43,17 @@
 
 Ce changement cassant est admis par la section 13 (aucun client ne consomme encore l'API).
 
+### 1.3 Persistance des utilisateurs (DB-04)
+
+| Avant DB-04 | Depuis DB-04 |
+|---|---|
+| Utilisateurs en mémoire, perdus au redémarrage, deux utilisateurs initiaux | Utilisateurs enregistrés dans PostgreSQL ; aucun utilisateur initial |
+| Identifiant numérique (`/api/v1/users/1`) | Identifiant UUID (`/api/v1/users/0193a5f4-2b3c-7d4e-9f50-617283940a1b`) ; un autre format donne 400 `VALIDATION_ERROR` (`Must be a valid UUID`) |
+| Email enregistré tel que reçu | Email enregistré et renvoyé en **minuscules** ; deux emails qui ne diffèrent que par la casse sont en conflit (409 `EMAIL_ALREADY_USED`) |
+| Liste dans l'ordre d'insertion | Liste triée par date de création, puis par identifiant (ordre stable) |
+
+Les champs renvoyés restent `id`, `name` et `email`. Ce changement cassant est admis par la section 13 (aucun client ne consomme encore l'API).
+
 ## 2. Requêtes
 
 - **Format :**
@@ -75,7 +86,7 @@ Chaque requête reçoit un identifiant, qui permet de retrouver dans les journau
 Exemple d'échange :
 
 ```text
-GET /api/v1/users/99 HTTP/1.1
+GET /api/v1/users/0193a5f4-2b3c-7d4e-9f50-617283940a1b HTTP/1.1
 X-Request-Id: client-abc-123
 
 HTTP/1.1 404 Not Found
@@ -516,7 +527,8 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | Validation des paramètres et du corps | Réalisé pour `/users` (FND-04) |
 | Routes sans préfixe `/api/v1`, réponses sans enveloppe, route `GET /` | Réalisé (FND-07) : voir section 1.2 |
 | Corps envoyé dans un autre format que JSON, refusé en 400 au lieu de 415 | Réalisé (FND-08) |
-| Identifiants numériques, accès sans autorisation | DB-04, AUTH-02 |
+| Identifiants numériques | Réalisé (DB-04) : voir section 1.3 |
+| Accès sans autorisation | AUTH-02 |
 
 ## 16. Historique
 
@@ -529,3 +541,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | 2026-11-18 | En-tête `X-Request-Id` en requête (facultatif) et en réponse (toujours présent) (FND-05) ; changement additif (section 13) |
 | 2026-11-18 | Protections HTTP (FND-08) : corps JSON de 10 Ko au plus, 415 pour un corps qui n'est pas en JSON, limitation du débit et 429, CORS selon `CORS_ORIGINS`, en-têtes de sécurité ; le passage de 400 à 415 et la baisse de la limite de 100 Ko à 10 Ko sont des changements cassants admis (section 13) |
 | 2026-11-20 | Identifiants en base : UUID v7 générés par PostgreSQL 18, choix finalisé (SET-04) ; précision sans effet sur le contrat actuel de l'API |
+| 2026-11-23 | Utilisateurs persistants (DB-04) : identifiants UUID dans `/api/v1/users/:id`, email en minuscules, tri par date de création, plus d'utilisateurs initiaux (section 1.3) ; changement cassant admis (section 13) |

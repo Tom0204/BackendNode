@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { userController } from '../controllers/user.controller'
+import type { UserController } from '../controllers/user.controller'
 import { validateRequest } from '../middlewares/validation.middleware'
 import {
     createUserBodySchema,
@@ -8,14 +8,17 @@ import {
     userIdParamsSchema
 } from '../schemas/user.schema'
 
-const router = Router()
+/** Routes /users, branchées sur le controller reçu (construit par createApp). */
+export function createUserRoutes(controller: UserController): Router {
+    const router = Router()
 
-// Chaque route déclare ses schémas. Un emplacement non déclaré doit être vide.
-router.get('/', validateRequest({}), userController.getAll)
-router.get('/:id', validateRequest({ params: userIdParamsSchema }), userController.getById)
-router.post('/', validateRequest({ body: createUserBodySchema }), userController.create)
-router.put('/:id', validateRequest({ params: userIdParamsSchema, body: replaceUserBodySchema }), userController.replace)
-router.patch('/:id', validateRequest({ params: userIdParamsSchema, body: patchUserBodySchema }), userController.patch)
-router.delete('/:id', validateRequest({ params: userIdParamsSchema }), userController.remove)
+    // Chaque route déclare ses schémas. Un emplacement non déclaré doit être vide.
+    router.get('/', validateRequest({}), controller.getAll)
+    router.get('/:id', validateRequest({ params: userIdParamsSchema }), controller.getById)
+    router.post('/', validateRequest({ body: createUserBodySchema }), controller.create)
+    router.put('/:id', validateRequest({ params: userIdParamsSchema, body: replaceUserBodySchema }), controller.replace)
+    router.patch('/:id', validateRequest({ params: userIdParamsSchema, body: patchUserBodySchema }), controller.patch)
+    router.delete('/:id', validateRequest({ params: userIdParamsSchema }), controller.remove)
 
-export default router
+    return router
+}

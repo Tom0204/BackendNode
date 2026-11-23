@@ -53,8 +53,10 @@ export interface LootReference {
     dropChanceBp: number
 }
 
-/** Code de la zone de départ, attribuée à tout nouveau personnage (CHAR-03, DB-04). */
-export const STARTING_ZONE_CODE = 'clearing'
+import { STARTING_ZONE_CODE } from '../../src/config/gameplay'
+
+/** Code de la zone de départ, défini une seule fois dans src/config/gameplay.ts (utilisé par le repository des personnages). */
+export { STARTING_ZONE_CODE }
 
 export const CLASSES: readonly ClassReference[] = [
     {

@@ -14,10 +14,13 @@ const ALLOWED_ORIGIN = 'https://jeu.example.com'
 const OTHER_ORIGIN = 'https://autre.example.com'
 
 let app: Express
+// Utilisateur existant, pour les requêtes qui en ciblent un (DELETE).
+let existingUserId: string
 
 beforeEach(async () => {
-    const fresh = await loadFreshApp()
+    const fresh = await loadFreshApp({ users: [{ name: 'Alice', email: 'alice@example.com' }] })
     app = fresh.app
+    existingUserId = fresh.users[0]?.id ?? ''
 })
 
 describe('en-têtes de sécurité (helmet)', () => {
@@ -91,7 +94,7 @@ describe('format du corps : JSON uniquement (415)', () => {
 
     it('requête sans corps : non concernée (GET 200, DELETE 204)', async () => {
         expect((await request(app).get(USERS)).status).toBe(200)
-        expect((await request(app).delete(`${USERS}/1`)).status).toBe(204)
+        expect((await request(app).delete(`${USERS}/${existingUserId}`)).status).toBe(204)
     })
 
     it("POST avec Content-Length: 0 et sans Content-Type : non concerné (400 de validation, pas 415)", async () => {

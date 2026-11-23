@@ -69,7 +69,7 @@ Les choix validés (SET-04) et mis en place (DB-01) sont :
 
 Prisma, `pg` et la configuration Docker sont installés (DB-01). Le serveur vérifie la base avant d'ouvrir son port : `npm run dev` et `npm start` exigent un `.env` (modèle : `.env.example`) et PostgreSQL démarré (`npm run db:up`, Docker Desktop requis). Le client Prisma est généré dans `src/generated/prisma/` (ignoré par Git) ; le build CommonJS utilise l'option `--shims` de tsup.
 
-Le repository utilisateur actuellement en mémoire est temporaire. Ne pas créer de nouvelle persistance définitive en mémoire.
+Les repositories Prisma (`src/repositories/`) sont la seule couche qui accède à la base (DB-04). Les services sont construits avec le repository qu'on leur fournit : `server.ts` assemble les versions Prisma, les tests peuvent fournir un repository contrôlé (`tests/helpers/`). Ne pas créer de persistance en mémoire dans `src/`.
 
 ## 4. Architecture et règles de développement
 
@@ -136,7 +136,7 @@ Tests actuels :
 - Les tests doivent couvrir les cas nominaux, erreurs, limites et non-régressions.
 - `tests/database/` pour les tests utilisant PostgreSQL : exclusivement la base `mmorpg_test`, protégée par `tests/helpers/test-database.ts`, et lancés uniquement par `npm run test:db`.
 
-Dernier état connu : **277 tests validés après DB-03** (`npm test`, sans base) et **38 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
+Dernier état connu : **302 tests validés après DB-04** (`npm test`, sans base) et **61 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
 
 Commandes principales :
 
@@ -168,8 +168,11 @@ Les tickets suivants sont validés :
 - SET-02 et SET-03.
 - DB-01.
 - DB-02 et DB-03.
+- DB-04.
 
 Derniers commits connus :
+- DB-02 et DB-03 : `d6285f5`.
+- DB-01 : `f858ab4`.
 - SET-04 : `ea106ef`.
 - FND-09 : `996dc8e`.
 - FND-05 : `b1d706e`.
@@ -178,8 +181,8 @@ Derniers commits connus :
 FND-08 est **validé**, et non en attente de validation.
 
 État fonctionnel connu :
-- API de gestion des utilisateurs (CRUD en mémoire).
-- PostgreSQL et Prisma configurés (DB-01) ; modèle, migration `init` et données de référence en place (DB-02, DB-03) ; pas encore de repository persistant (DB-04).
+- API de gestion des utilisateurs (CRUD persistant dans PostgreSQL, identifiants UUID).
+- PostgreSQL et Prisma configurés (DB-01) ; modèle, migration `init` et données de référence en place (DB-02, DB-03) ; repositories persistants des utilisateurs et des personnages (DB-04).
 - Pas encore d'authentification.
 - Pas encore de Front-End.
 

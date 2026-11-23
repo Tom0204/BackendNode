@@ -132,7 +132,7 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 
 ## 7. Responsabilités pour les tickets suivants
 
-- **DB-04** : les repositories écrivent `email` en minuscules, `normalized_name = lower(name)`, et la zone `clearing` à la création d'un personnage. Les identifiants des utilisateurs passent du numérique à l'UUID.
+- **DB-04 (réalisé)** : le service utilisateur écrit `email` en minuscules ; le repository des personnages (`src/repositories/character.repository.ts`) remplit `normalized_name = lower(name)` et place tout nouveau personnage dans la zone `clearing` (`STARTING_ZONE_CODE`, `src/config/gameplay.ts`) ; les identifiants des utilisateurs sont des UUID dans l'API. Listes triées par `created_at`, puis `id`.
 - **CHAR-01, WORLD-01 à 03, ITEM-01, REWARD-01** : les tables existent et sont remplies par le seed. Ces tickets ajoutent repositories, services et endpoints, et d'éventuelles colonnes par de nouvelles migrations.
 - **COMBAT-01, WORLD-07, ITEM-02** : nouvelles tables (combats, instances, inventaire) par de nouvelles migrations.
 
@@ -141,3 +141,4 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 | Date | Changement |
 |---|---|
 | 2026-11-23 | Création (DB-02, DB-03) |
+| 2026-11-23 | Responsabilités de DB-04 réalisées (section 7) |

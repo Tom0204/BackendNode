@@ -4,9 +4,10 @@ import { z } from 'zod'
 // Même règle qu'avant FND-04 : la valeur n'est pas modifiée (ni rognée ni normalisée).
 const nonEmptyString = z.string().regex(/\S/, 'Must not be empty')
 
-/* Paramètres de chemin des routes /users/:id. L'identifiant reste une chaîne (conventions, section 7). */
+/* Paramètres de chemin des routes /users/:id. L'identifiant est un UUID, traité comme une chaîne opaque
+ * (conventions, section 7 ; DB-04). Un autre format donne 400 VALIDATION_ERROR. */
 export const userIdParamsSchema = z.strictObject({
-    id: z.string().regex(/^[1-9]\d*$/, 'Must be a positive integer')
+    id: z.uuid('Must be a valid UUID')
 })
 
 /* Corps de POST /users. */

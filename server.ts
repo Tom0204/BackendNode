@@ -1,8 +1,10 @@
 import { env } from './src/config/environment'
 import { flushLoggerAndExit, logger } from './src/config/logger'
-import app from './src/app'
+import { createApp } from './src/app'
 import { checkDatabaseConnection, createDatabase } from './src/database/client'
 import { describeDatabaseError } from './src/database/errors'
+import { createPrismaUserRepository } from './src/repositories/user.repository'
+import { createUserService } from './src/services/user.service'
 import { describeStartupError, startServer, systemErrorCode } from './src/startup'
 
 // Erreurs imprévues du processus : log fatal, écriture des logs, puis arrêt avec le code 1 (FND-05, décision D6).
@@ -52,6 +54,9 @@ async function start(): Promise<void> {
         flushLoggerAndExit(1)
         return
     }
+
+    // Assemblage (DB-04) : repositories Prisma → services → application.
+    const app = createApp({ userService: createUserService(createPrismaUserRepository(database.prisma)) })
 
     try {
         await startServer(app, env.PORT)

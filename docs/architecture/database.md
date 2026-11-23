@@ -37,7 +37,7 @@ Les versions sont installées **exactes** : le tag `latest` de `prisma` sur npm 
 
 Architecture :
 - un `pg.Pool` géré par l'application, transmis à `PrismaPg`, puis un **seul** `PrismaClient` partagé ;
-- accès à la base **uniquement dans les repositories** ; services indépendants d'Express et de Prisma ;
+- accès à la base **uniquement dans les repositories** (`src/repositories/`) ; services indépendants d'Express et de Prisma, construits avec le repository qu'on leur fournit (`server.ts` assemble les versions Prisma) ;
 - transactions `$transaction` pour toute opération qui modifie plusieurs données liées ;
 - fermeture du pool à l'arrêt du serveur : QUAL-06.
 
@@ -126,7 +126,7 @@ Implémentation : `tests/helpers/test-database.ts` (tests : `tests/unit/test-dat
 |---|---|
 | DB-01 | Réalisé et vérifié avec Docker (section 8) |
 | DB-02, DB-03 | Réalisés : modèle, migration `init`, seed idempotent (`data-model.md`, section 8 ci-dessous) |
-| DB-04 | Repositories persistants, passage des identifiants en UUID |
+| DB-04 | Réalisé : repositories Prisma des utilisateurs et des personnages, identifiants UUID dans l'API |
 | QUAL-06 | Migrations et CLI en production, sauvegardes, arrêt propre |
 
 ## 8. Commandes et premier démarrage
