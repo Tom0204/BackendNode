@@ -1,14 +1,12 @@
 import argon2 from 'argon2'
 import { createHash } from 'node:crypto'
-import type { Express } from 'express'
 import request from 'supertest'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { EXIT_FAILURE, EXIT_OK, runAccountCommand } from '../../src/cli/account-command'
-import type { Database } from '../../src/database/client'
 import { createPrismaUserRepository } from '../../src/repositories/user.repository'
 import { expectErrorResponse, expectSuccessResponse } from '../helpers/http'
 import { createTestCharacter, deleteAllPlayerData } from '../helpers/player-fixtures'
-import { requireSafeTestDatabaseUrl } from '../helpers/test-database'
+import { DATABASE_TEST_SESSION_TTL_MS as DAY_MS, startAppInstance, stopAppInstance, type AppInstance } from '../helpers/database-app'
 
 /* Comptes et authentification (AUTH-01 à AUTH-10) branchés comme dans server.ts : PostgreSQL (mmorpg_test), Argon2id réel.
  * La persistance est vérifiée avec deux instances d'application indépendantes : modules rechargés,
@@ -20,39 +18,7 @@ const LOGIN = '/api/v1/auth/login'
 const LOGOUT = '/api/v1/auth/logout'
 const USERS = '/api/v1/users'
 const ME = `${USERS}/me`
-const DAY_MS = 24 * 60 * 60 * 1000
 const PASSWORD = 'correct horse battery staple'
-
-interface AppInstance {
-    app: Express
-    database: Database
-}
-
-// Construit une instance complète, comme server.ts : connexion → repository Prisma + Argon2id → service → application.
-async function startAppInstance(): Promise<AppInstance> {
-    vi.resetModules()
-    const { createDatabase } = await import('../../src/database/client')
-    const { createPrismaUserRepository } = await import('../../src/repositories/user.repository')
-    const { createPrismaSessionRepository } = await import('../../src/repositories/session.repository')
-    const { createAuthService } = await import('../../src/services/auth.service')
-    const { createUserService } = await import('../../src/services/user.service')
-    const { createArgon2PasswordHasher } = await import('../../src/services/password-hasher')
-    const { createApp } = await import('../../src/app')
-    const database = createDatabase(requireSafeTestDatabaseUrl())
-    const userRepository = createPrismaUserRepository(database.prisma)
-    const authService = createAuthService({
-        userRepository,
-        sessionRepository: createPrismaSessionRepository(database.prisma),
-        passwordHasher: createArgon2PasswordHasher(),
-        sessionTtlMs: DAY_MS
-    })
-    return { app: createApp({ authService, userService: createUserService(userRepository) }), database }
-}
-
-async function stopAppInstance({ database }: AppInstance): Promise<void> {
-    const { closeDatabase } = await import('../../src/database/client')
-    await closeDatabase(database)
-}
 
 let first: AppInstance
 

@@ -8,6 +8,12 @@ import { createUserRoutes } from './routes/user.routes'
 import { createUserController } from './controllers/user.controller'
 import type { UserService } from './services/user.service'
 import { createRequireAuth } from './middlewares/auth.middleware'
+import { createCharacterClassRoutes } from './routes/character-class.routes'
+import { createCharacterClassController } from './controllers/character-class.controller'
+import type { CharacterClassService } from './services/character-class.service'
+import { createCharacterRoutes } from './routes/character.routes'
+import { createCharacterController } from './controllers/character.controller'
+import type { CharacterService } from './services/character.service'
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
 import { createRequestLogger } from './middlewares/request-logger.middleware'
 import { createCorsMiddleware, createSecurityHeaders, requireJsonContentType } from './middlewares/security.middleware'
@@ -23,10 +29,12 @@ import { corsAllowedOrigins, JSON_BODY_LIMIT } from './config/http'
 export interface AppDependencies {
     authService: AuthService
     userService: UserService
+    characterClassService: CharacterClassService
+    characterService: CharacterService
 }
 
 /** Construit l'application Express. Aucune connexion n'est ouverte ici. */
-export function createApp({ authService, userService }: AppDependencies): Express {
+export function createApp({ authService, userService, characterClassService, characterService }: AppDependencies): Express {
     const app = express()
 
     // L'ordre compte (FND-08) :
@@ -51,7 +59,9 @@ export function createApp({ authService, userService }: AppDependencies): Expres
         API_V1_PREFIX,
         createApiV1Router({
             auth: createAuthRoutes(createAuthController(authService), requireAuth),
-            users: createUserRoutes(createUserController(userService), requireAuth)
+            users: createUserRoutes(createUserController(userService), requireAuth),
+            classes: createCharacterClassRoutes(createCharacterClassController(characterClassService)),
+            characters: createCharacterRoutes(createCharacterController(characterService), requireAuth)
         })
     )
 

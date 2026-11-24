@@ -135,13 +135,14 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 
 | Règle (rules.md) | Base de données | Service (ticket) |
 |---|---|---|
-| Nom de personnage : 3 à 16 lettres A–Z ou a–z | `CHECK` | Validation Zod et message d'erreur API (CHAR-02, CHAR-03) |
-| Nom unique sans tenir compte de la casse | `normalized_name` unique + `CHECK` | Remplir `normalized_name = lower(name)` ; erreur 409 (CHAR-03) |
+| Nom de personnage : 3 à 16 lettres A–Z ou a–z | `CHECK` | Validation Zod avec le même motif (`CHARACTER_NAME_PATTERN`), vérifiée identique à la contrainte SQL par un test (CHAR-02, CHAR-03) |
+| Nom unique sans tenir compte de la casse | `normalized_name` unique + `CHECK` | Remplir `normalized_name = lower(name)` ; 409 `CHARACTER_NAME_TAKEN` (CHAR-03) |
 | Email unique sans tenir compte de la casse | `email` unique + `CHECK` minuscules | Normaliser l'email (minuscules) avant écriture (DB-04, AUTH-04) |
 | Mot de passe jamais stocké en clair | `password_hash` obligatoire | Hash Argon2id calculé par le service avant écriture ; jamais renvoyé (AUTH-03, AUTH-04) |
 | Jeton de session jamais stocké | `sessions_token_hash_check` (64 caractères hexadécimaux) | Seule l'empreinte SHA-256 est écrite (AUTH-05) |
 | Session valide : non révoquée, non expirée, compte actif | — | Vérifié à chaque requête par le service d'authentification, avec son horloge (AUTH-07) |
-| 5 personnages au maximum par compte | — | Vérification dans une transaction (CHAR-03) |
+| 5 personnages au maximum par compte | — | `createWithinLimit` : transaction avec verrou sur la ligne du compte (`SELECT … FOR UPDATE`), comptage puis insertion ; seule méthode de création ; 409 `CHARACTER_LIMIT_REACHED` (CHAR-02, CHAR-03) |
+| Un personnage appartient au compte qui l'a créé | `user_id` obligatoire, cascade | Propriétaire tiré du jeton ; lecture par le seul propriétaire, sinon 404 (CHAR-03 à CHAR-05) |
 | Niveau 1 à 10, XP ≥ 0 | `CHECK` | Calcul de progression (STAT-03, STAT-04) |
 | Zone de départ attribuée à la création | `current_zone_id` obligatoire | Attribuer la zone de code `clearing` (`STARTING_ZONE_CODE`), jamais une valeur fournie par le client (DB-04, CHAR-03) |
 | Probabilité de butin entre 0 et 1 | `CHECK` 0 à 10 000 | Tirage aléatoire injectable (REWARD-01) |
@@ -151,7 +152,8 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 - **DB-04 (réalisé)** : le service utilisateur écrit `email` en minuscules ; le repository des personnages (`src/repositories/character.repository.ts`) remplit `normalized_name = lower(name)` et place tout nouveau personnage dans la zone `clearing` (`STARTING_ZONE_CODE`, `src/config/gameplay.ts`) ; les identifiants des utilisateurs sont des UUID dans l'API. Listes triées par `created_at`, puis `id`.
 - **AUTH-01 (réalisé)** : migration `auth_user_fields` (`password_hash`, `role`).
 - **AUTH-05 à AUTH-10 (réalisés)** : migration `auth_sessions` : valeur `ADMIN` ajoutée à `user_role`, colonne `status`, table `sessions`. Les sessions expirées ou révoquées restent en base ; leur nettoyage est reporté.
-- **CHAR-01, WORLD-01 à 03, ITEM-01, REWARD-01** : les tables existent et sont remplies par le seed. Ces tickets ajoutent repositories, services et endpoints, et d'éventuelles colonnes par de nouvelles migrations.
+- **CHAR-01 à CHAR-05 (réalisés)** : aucune migration ; classes lues en lecture seule, personnages créés uniquement par `createWithinLimit`. Pas d'état supplémentaire du personnage au MVP.
+- **WORLD-01 à 03, ITEM-01, REWARD-01** : les tables existent et sont remplies par le seed. Ces tickets ajoutent repositories, services et endpoints, et d'éventuelles colonnes par de nouvelles migrations.
 - **COMBAT-01, WORLD-07, ITEM-02** : nouvelles tables (combats, instances, inventaire) par de nouvelles migrations.
 
 ## Historique
@@ -162,3 +164,4 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 | 2026-11-23 | Responsabilités de DB-04 réalisées (section 7) |
 | 2026-11-23 | `password_hash` et `role` ajoutés à `users` (AUTH-01) |
 | 2026-11-24 | Rôle `ADMIN`, statut des comptes et table `sessions` (AUTH-05 à AUTH-10) |
+| 2026-11-24 | Règles de propriété et de création des personnages (CHAR-01 à CHAR-05), sans migration |

@@ -3,24 +3,32 @@ import type { PrismaClient } from '../generated/prisma/client'
 import type { Character, NewCharacter } from '../types/character'
 import {
     isPrismaError,
+    LimitReachedError,
     PRISMA_FOREIGN_KEY_VIOLATION,
-    PRISMA_RECORD_NOT_FOUND,
     PRISMA_UNIQUE_VIOLATION,
     ReferenceNotFoundError,
     UniqueConstraintError
 } from './errors'
 
 /**
- * Accès aux personnages (DB-04). Utilisé par les services de personnage à partir de CHAR-03.
+ * Accès aux personnages (DB-04, CHAR-02 à CHAR-05).
  * Correspond au schéma et à data-model.md :
  * - normalized_name = lower(name) (CHECK), unique : un nom est unique sans tenir compte de la casse ;
  * - niveau 1 et XP 0 par défaut (valeurs de la base) ;
  * - zone courante obligatoire : la zone de départ (STARTING_ZONE_CODE), jamais une valeur fournie par le client.
- * Erreurs : nom déjà pris → UniqueConstraintError('name') ; utilisateur, classe ou zone de départ inexistants →
- * ReferenceNotFoundError. Le format du nom est validé avant l'appel (Zod en CHAR-03, CHECK en base).
+ *
+ * La création n'existe que sous une forme : createWithinLimit, qui respecte la limite de personnages par compte
+ * de façon atomique. Aucune autre méthode d'écriture ne permet de la contourner.
  */
 export interface CharacterRepository {
-    create(data: NewCharacter): Promise<Character>
+    /**
+     * Crée un personnage si le compte en possède moins de `limit`, dans une seule transaction :
+     * verrou sur la ligne du compte, comptage, puis insertion. Deux créations simultanées pour un même compte
+     * s'exécutent donc l'une après l'autre ; un échec annule tout (aucun personnage partiel).
+     * Erreurs : LimitReachedError ; nom déjà pris → UniqueConstraintError('name') ;
+     * compte ou classe inexistants → ReferenceNotFoundError('user' | 'class').
+     */
+    createWithinLimit(data: NewCharacter, limit: number): Promise<Character>
     findById(id: string): Promise<Character | undefined>
     /** Personnages d'un utilisateur, du plus ancien au plus récent (createdAt, puis id). */
     findAllByUserId(userId: string): Promise<Character[]>
@@ -49,27 +57,43 @@ export function normalizeCharacterName(name: string): string {
 
 export function createPrismaCharacterRepository(prisma: PrismaClient): CharacterRepository {
     return {
-        async create({ userId, classId, name }) {
-            try {
-                return await prisma.character.create({
-                    data: {
-                        name,
-                        normalizedName: normalizeCharacterName(name),
-                        user: { connect: { id: userId } },
-                        characterClass: { connect: { id: classId } },
-                        currentZone: { connect: { code: STARTING_ZONE_CODE } }
-                    },
-                    select: CHARACTER_SELECT
-                })
-            } catch (error) {
-                if (isPrismaError(error, PRISMA_UNIQUE_VIOLATION)) {
-                    throw new UniqueConstraintError('name')
+        createWithinLimit({ userId, classId, name }, limit) {
+            return prisma.$transaction(async (tx) => {
+                // Verrou sur la ligne du compte jusqu'à la fin de la transaction : les créations concurrentes
+                // d'un même compte attendent ici, puis comptent les personnages déjà validés.
+                const owner = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`
+                if (owner.length === 0) {
+                    throw new ReferenceNotFoundError('user')
                 }
-                if (isPrismaError(error, PRISMA_RECORD_NOT_FOUND) || isPrismaError(error, PRISMA_FOREIGN_KEY_VIOLATION)) {
-                    throw new ReferenceNotFoundError('user, class or starting zone')
+                if ((await tx.character.count({ where: { userId } })) >= limit) {
+                    throw new LimitReachedError('characters', limit)
                 }
-                throw error
-            }
+                const startingZone = await tx.zone.findUnique({ where: { code: STARTING_ZONE_CODE }, select: { id: true } })
+                if (!startingZone) {
+                    // Donnée de référence absente (seed non exécuté) : erreur de configuration, 500.
+                    throw new Error(`Zone de départ « ${STARTING_ZONE_CODE} » absente : lancer npm run db:seed`)
+                }
+                try {
+                    return await tx.character.create({
+                        data: {
+                            userId,
+                            classId,
+                            currentZoneId: startingZone.id,
+                            name,
+                            normalizedName: normalizeCharacterName(name)
+                        },
+                        select: CHARACTER_SELECT
+                    })
+                } catch (error) {
+                    if (isPrismaError(error, PRISMA_UNIQUE_VIOLATION)) {
+                        throw new UniqueConstraintError('name')
+                    }
+                    if (isPrismaError(error, PRISMA_FOREIGN_KEY_VIOLATION)) {
+                        throw new ReferenceNotFoundError('class')
+                    }
+                    throw error
+                }
+            })
         },
 
         async findById(id) {

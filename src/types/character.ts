@@ -5,6 +5,7 @@
 export interface Character {
     /** UUID v7 généré par PostgreSQL. */
     id: string
+    /** Propriétaire : toujours le compte authentifié qui l'a créé, jamais une valeur fournie par le client. */
     userId: string
     classId: string
     currentZoneId: string
@@ -20,6 +21,6 @@ export interface Character {
 export interface NewCharacter {
     userId: string
     classId: string
-    /** Nom déjà validé (3 à 16 lettres A–Z ou a–z, contrainte CHECK de la base). */
+    /** Nom déjà validé (CHARACTER_NAME_PATTERN, identique à la contrainte CHECK de la base). */
     name: string
 }

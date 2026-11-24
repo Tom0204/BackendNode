@@ -4,3 +4,13 @@
 
 /** Code de la zone de départ (rules.md §8), attribuée à tout nouveau personnage. */
 export const STARTING_ZONE_CODE = 'clearing'
+
+/** Nombre maximal de personnages par compte (rules.md §3, CHAR-02). */
+export const MAX_CHARACTERS_PER_ACCOUNT = 5
+
+/**
+ * Format d'un nom de personnage (rules.md §3, CHAR-02) : 3 à 16 lettres ASCII, sans accent, espace ni chiffre.
+ * Identique, caractère pour caractère, à la contrainte SQL characters_name_format_check (migration init) ;
+ * un test PostgreSQL vérifie que l'API et la base acceptent et refusent exactement les mêmes noms.
+ */
+export const CHARACTER_NAME_PATTERN = /^[A-Za-z]{3,16}$/

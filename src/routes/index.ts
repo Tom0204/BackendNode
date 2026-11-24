@@ -7,6 +7,8 @@ export const API_V1_PREFIX = '/api/v1'
 export interface ApiV1Routers {
     auth: Router
     users: Router
+    classes: Router
+    characters: Router
 }
 
 /** Routeur de la version 1 : chaque ressource y est montée par son chemin relatif au préfixe. */
@@ -14,5 +16,7 @@ export function createApiV1Router(routers: ApiV1Routers): Router {
     const router = Router()
     router.use('/auth', routers.auth)
     router.use('/users', routers.users)
+    router.use('/classes', routers.classes)
+    router.use('/characters', routers.characters)
     return router
 }

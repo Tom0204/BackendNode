@@ -31,13 +31,18 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du d�
 | AUTH-01 | Validé (hash du mot de passe et rôle) | `4e37896` |
 | AUTH-03 | Validé (Argon2id) | `4e37896` |
 | AUTH-04 | Validé (`POST /api/v1/auth/register`) | `4e37896` |
-| AUTH-05 | Validé (sessions opaques en PostgreSQL) | Lot L2 (hash à reporter au lot suivant) |
-| AUTH-06 | Validé (`POST /api/v1/auth/login`, statut des comptes) | Lot L2 |
-| AUTH-07 | Validé (`requireAuth`, contexte typé) | Lot L2 |
-| AUTH-08 | Validé (rôle `ADMIN`, `requireRole`, règles de propriété dans les services) | Lot L2 |
-| AUTH-02 | Validé (routes `/users` réintroduites avec permissions ; partiel en `4e37896`) | Lot L2 |
-| AUTH-09 | Validé (`/users/me`) | Lot L2 |
-| AUTH-10 | Validé (`POST /api/v1/auth/logout`) | Lot L2 |
+| AUTH-05 | Validé (sessions opaques en PostgreSQL) | `5f5256e` |
+| AUTH-06 | Validé (`POST /api/v1/auth/login`, statut des comptes) | `5f5256e` |
+| AUTH-07 | Validé (`requireAuth`, contexte typé) | `5f5256e` |
+| AUTH-08 | Validé (rôle `ADMIN`, `requireRole`, règles de propriété dans les services) | `5f5256e` |
+| AUTH-02 | Validé (routes `/users` réintroduites avec permissions ; partiel en `4e37896`) | `5f5256e` |
+| AUTH-09 | Validé (`/users/me`) | `5f5256e` |
+| AUTH-10 | Validé (`POST /api/v1/auth/logout`) | `5f5256e` |
+| CHAR-02 | Réalisé (règles du nom, limite atomique, propriété) | — |
+| CHAR-01 | Réalisé (`GET /api/v1/classes`, détail) | — |
+| CHAR-03 | Réalisé (`POST /api/v1/characters`) | — |
+| CHAR-04 | Réalisé (`GET /api/v1/characters`) | — |
+| CHAR-05 | Réalisé (`GET /api/v1/characters/:characterId`) | — |
 
 ## Ordre de réalisation
 
@@ -898,6 +903,77 @@ Vérifié aussi : une erreur PostgreSQL inattendue (contrainte refusée) ne reco
     - promotion et désactivation par le script (Prisma), adresse inconnue sans création ;
     - un joueur qui vise un autre compte : 404 sans aucune suppression ;
     - suppression par un administrateur et par le propriétaire, avec cascade vérifiée.
+
+## Classes et personnages (lot L3 : CHAR-01 à CHAR-05)
+
+Ordre de réalisation : CHAR-02 → CHAR-01 → CHAR-03 → CHAR-04 → CHAR-05. Aucune migration : le modèle de DB-02 couvrait déjà tout le périmètre.
+
+### Décisions validées
+
+| # | Décision |
+|---|---|
+| D1 | Classe : `{ id, code, name, baseStats, statsPerLevel }`, sans les dates |
+| D2 | Personnages visibles par leur **propriétaire seulement**, sans exception pour les administrateurs |
+| D3 | Personnage, identique en liste et en détail : `{ id, name, classId, level, experience, currentZoneId, createdAt }` |
+| D4 | Nom indisponible : 409 `CHARACTER_NAME_TAKEN` |
+| D5 | Aucun état supplémentaire du personnage au MVP |
+| D6 | Liste sans pagination : 5 personnages au plus |
+| D7 | Pas de statistiques dans ce lot (STAT-01, STAT-02) |
+
+Précisions du propriétaire :
+- **Création atomique.** Toute création passe par `createWithinLimit`, seule méthode d'écriture du repository : `create` a été supprimée. Elle s'exécute dans une transaction : verrou sur la ligne du compte (`SELECT … FOR UPDATE`), comptage, lecture de la zone de départ, insertion. Un échec à n'importe quelle étape annule tout et libère le verrou.
+- **Propriété.** Un personnage inexistant et celui d'un autre utilisateur donnent la même réponse : 404 `CHARACTER_NOT_FOUND`. Le propriétaire vient toujours du jeton.
+- **Nom.** `CHARACTER_NAME_PATTERN` (`/^[A-Za-z]{3,16}$/`) est identique à la contrainte SQL `characters_name_format_check`. Un test PostgreSQL vérifie, sur 19 noms, que Zod et la base acceptent et refusent exactement les mêmes : accents, `ß`, lettres pleine largeur, grecques ou cyrilliques, espaces, chiffres, tirets, longueurs 2 et 17.
+
+### Adaptations
+
+| Élément | Adaptation | Raison | Reprise |
+|---|---|---|---|
+| Classe inexistante | 422 `CLASS_NOT_FOUND` dans le corps, 404 dans l'URL | Précision SET-05, conventions §5.3 | — |
+| Ordre des contrôles | Validation → classe → limite → nom | Une seule erreur, prévisible | — |
+| Paramètres de route | `:classId`, `:characterId` (conventions §8) ; `/users` garde `:id` | Nommage explicite des nouvelles routes | — |
+| `CharacterRepository.create` | Supprimée, remplacée par `createWithinLimit` | Aucun chemin ne peut contourner la limite | — |
+| `LimitReachedError` | Nouvelle erreur de repository, reconnue par sa propriété `kind` | Même mécanisme que les autres erreurs (DB-04) | — |
+| Zone de départ absente (seed non lancé) | Erreur 500 explicite dans les logs | Erreur de configuration, pas une faute du client | — |
+| Compte supprimé pendant une création | 401 | Ses sessions sont supprimées avec lui | — |
+| `tests/helpers/database-app.ts` | Construction commune de l'application sur PostgreSQL | Évite la duplication entre les tests d'API sur base | — |
+| `createTestCharacter` (tests) | Insertion directe, sans limite | Réservée aux tests de contraintes SQL | — |
+| Postman | Aucune requête ajoutée | Collections prévues par DOC-01 | DOC-01 |
+
+### Fichiers créés ou modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `src/config/gameplay.ts` | `MAX_CHARACTERS_PER_ACCOUNT`, `CHARACTER_NAME_PATTERN` |
+| `src/types/character.ts`, `src/types/character-class.ts` | Types métier |
+| `src/repositories/character.repository.ts`, `src/repositories/character-class.repository.ts`, `src/repositories/errors.ts` | Création atomique, lecture des classes, `LimitReachedError` |
+| `src/services/character.service.ts`, `src/services/character-class.service.ts` | Règles de création et de propriété, catalogue |
+| `src/schemas/character.schema.ts`, `src/schemas/character-class.schema.ts` | Nom, corps strict, paramètres |
+| `src/controllers/character.dto.ts`, `src/controllers/character.controller.ts`, `src/controllers/character-class.controller.ts` | Formes publiques, contrôleurs |
+| `src/routes/character.routes.ts`, `src/routes/character-class.routes.ts`, `src/routes/index.ts`, `src/app.ts`, `server.ts` | Routes et assemblage |
+
+### Tests : 502 sans base (`npm test`), 128 avec base (`npm run test:db`)
+
+- **Sans base :**
+  - contrats des repositories de personnages et de classes (sur les repositories en mémoire) ;
+  - service :
+    - valeurs fixées par le serveur, passage obligatoire par `createWithinLimit` avec la limite de la configuration ;
+    - 422, 409 limite, 409 nom quelle que soit la casse, ordre des contrôles ;
+    - classe ou compte disparus, erreurs propagées ;
+    - propriété : autre joueur, administrateur et inconnu → même 404 ;
+  - API :
+    - classes publiques (forme exacte, 404, 400, aucune écriture) ;
+    - création : 201, 401, 5 champs interdits, propriétaire tiré du jeton, 8 noms invalides et 3 valides, 400, 422, 409 ;
+    - liste : vide, seulement les siens, administrateur compris ;
+    - détail : 404 identiques ; renommage et suppression absents.
+- **Avec base :**
+  - contrats Prisma ;
+  - **8 créations simultanées sur un même compte → exactement 5** ;
+  - même nom créé simultanément par deux comptes → un seul ;
+  - **panne injectée après le verrou et le comptage → rien n'est créé, verrou libéré** ;
+  - correspondance Zod/SQL sur 19 noms ;
+  - cascade ;
+  - parcours HTTP : inscription, connexion, classes, création dans la vraie zone de départ, 409 nom, **7 requêtes simultanées → 5 créations et 2 × 409**, liste, détail, suppression du compte.
 
 ## Décisions de fonctionnement
 

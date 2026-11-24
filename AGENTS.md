@@ -137,7 +137,7 @@ Tests actuels :
 - Les tests doivent couvrir les cas nominaux, erreurs, limites et non-régressions.
 - `tests/database/` pour les tests utilisant PostgreSQL : exclusivement la base `mmorpg_test`, protégée par `tests/helpers/test-database.ts` (URL) et par `deleteAllPlayerData` (`current_database()` vérifiée avant tout nettoyage), et lancés uniquement par `npm run test:db`.
 
-Dernier état connu : **441 tests validés après le lot L2 (AUTH-02, AUTH-05 à AUTH-10)** (`npm test`, sans base) et **94 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
+Dernier état connu : **502 tests validés après le lot L3 (CHAR-01 à CHAR-05)** (`npm test`, sans base) et **128 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
 
 Commandes principales :
 
@@ -171,10 +171,13 @@ Les tickets suivants sont validés :
 - DB-01.
 - DB-02 et DB-03.
 - DB-04.
-- AUTH-01, AUTH-03 et AUTH-04 (lot L1, réalisés) ; AUTH-02 était alors partiel (permissions reportées au lot L2).
-- AUTH-02, AUTH-05, AUTH-06, AUTH-07, AUTH-08, AUTH-09 et AUTH-10 (lot L2 ; hash du commit à reporter au début du lot suivant).
+- AUTH-01, AUTH-03 et AUTH-04 (lot L1).
+- AUTH-02, AUTH-05, AUTH-06, AUTH-07, AUTH-08, AUTH-09 et AUTH-10 (lot L2) : l'EPIC 03 est terminé.
+
+Réalisés, en attente de validation (lot L3) : CHAR-01, CHAR-02, CHAR-03, CHAR-04 et CHAR-05.
 
 Derniers commits connus :
+- AUTH-02, AUTH-05 à AUTH-10 (lot L2) : `5f5256e`.
 - AUTH-01, AUTH-03 et AUTH-04 : `4e37896`.
 - DB-04 : `037dd8e`.
 - DB-02 et DB-03 : `d6285f5`.
@@ -190,7 +193,8 @@ FND-08 est **validé**, et non en attente de validation.
 - Inscription, connexion et déconnexion (`/api/v1/auth/register`, `login`, `logout`) : sessions opaques en PostgreSQL, jeton `Authorization: Bearer`, 24 heures.
 - Routes protégées `/api/v1/users` (liste réservée aux administrateurs, `/:id` pour le propriétaire ou un administrateur, `/me`) ; rôles `PLAYER` et `ADMIN`, statut `ACTIVE` ou `DISABLED`, gérés par `npm run account`.
 - PostgreSQL et Prisma configurés (DB-01) ; modèle, migration `init` et données de référence en place (DB-02, DB-03) ; repositories persistants des utilisateurs et des personnages (DB-04).
-- Pas encore de changement de mot de passe ni de nettoyage des sessions expirées.
+- Catalogue public des classes (`GET /api/v1/classes`) ; personnages (`POST`, `GET /api/v1/characters`, `GET /api/v1/characters/:characterId`) réservés à leur propriétaire, 5 au plus par compte (création atomique).
+- Pas encore de changement de mot de passe ni de nettoyage des sessions expirées ; pas encore de statistiques calculées (STAT-01, STAT-02).
 - Pas encore de Front-End.
 
 Ces informations sont un point de repère, pas une preuve de l'état actuel. Vérifier Git, les fichiers, les scripts et les tests avant chaque intervention.

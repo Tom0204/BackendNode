@@ -7,6 +7,10 @@ import { createPrismaUserRepository } from './src/repositories/user.repository'
 import { createPrismaSessionRepository } from './src/repositories/session.repository'
 import { createAuthService } from './src/services/auth.service'
 import { createUserService } from './src/services/user.service'
+import { createPrismaCharacterClassRepository } from './src/repositories/character-class.repository'
+import { createPrismaCharacterRepository } from './src/repositories/character.repository'
+import { createCharacterClassService } from './src/services/character-class.service'
+import { createCharacterService } from './src/services/character.service'
 import { HOUR_MS } from './src/config/auth'
 import { createArgon2PasswordHasher } from './src/services/password-hasher'
 import { describeStartupError, startServer, systemErrorCode } from './src/startup'
@@ -59,7 +63,7 @@ async function start(): Promise<void> {
         return
     }
 
-    // Assemblage (DB-04, AUTH-04 à AUTH-10) : repositories Prisma et hachage Argon2id → services → application.
+    // Assemblage (DB-04, AUTH-04 à AUTH-10, CHAR-01 à CHAR-05) : repositories Prisma et hachage Argon2id → services → application.
     const userRepository = createPrismaUserRepository(database.prisma)
     const authService = createAuthService({
         userRepository,
@@ -67,7 +71,16 @@ async function start(): Promise<void> {
         passwordHasher: createArgon2PasswordHasher(),
         sessionTtlMs: env.SESSION_TTL_HOURS * HOUR_MS
     })
-    const app = createApp({ authService, userService: createUserService(userRepository) })
+    const characterClassRepository = createPrismaCharacterClassRepository(database.prisma)
+    const app = createApp({
+        authService,
+        userService: createUserService(userRepository),
+        characterClassService: createCharacterClassService(characterClassRepository),
+        characterService: createCharacterService({
+            characterRepository: createPrismaCharacterRepository(database.prisma),
+            characterClassRepository
+        })
+    })
 
     try {
         await startServer(app, env.PORT)

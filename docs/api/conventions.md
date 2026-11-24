@@ -147,6 +147,40 @@ Content-Type: application/json
 - **Suppression d'un compte.** Par son propriétaire ou par un administrateur. Un joueur qui vise un autre compte reçoit 404, sans aucun effacement. La suppression est une seule instruction : les personnages et les sessions sont supprimés avec le compte (cascade).
 - **Routes absentes.** `POST /api/v1/users` (remplacée par l'inscription) et `PUT /api/v1/users/:id` n'existent pas. Toutes les routes `/users` exigent d'abord un jeton : sans jeton, 401 ; avec un jeton, 404 `ROUTE_NOT_FOUND`.
 
+### 1.6 Classes et personnages (CHAR-01 à CHAR-05)
+
+| Route | Accès | Succès | Refus |
+|---|---|---|---|
+| `GET /api/v1/classes` | Public | 200 : les trois classes, dans l'ordre du seed | 400 (paramètre inconnu) |
+| `GET /api/v1/classes/:classId` | Public | 200 | 400 (identifiant non UUID) ; 404 `CLASS_NOT_FOUND` |
+| `POST /api/v1/characters` | Authentifié | 201 | 401 ; 400 ; 422 `CLASS_NOT_FOUND` ; 409 `CHARACTER_LIMIT_REACHED` ; 409 `CHARACTER_NAME_TAKEN` |
+| `GET /api/v1/characters` | Authentifié : ses personnages | 200, tableau (vide s'il n'en a aucun), sans pagination | 401 ; 400 |
+| `GET /api/v1/characters/:characterId` | Authentifié : son personnage | 200 | 401 ; 400 ; **404 `CHARACTER_NOT_FOUND`** (inexistant ou d'un autre joueur, administrateur compris) |
+
+Forme d'une classe :
+
+```json
+{
+  "id": "0193a5f1-1b2c-7d4e-8f90-a1b2c3d4e5f6",
+  "code": "warrior",
+  "name": "Guerrier",
+  "baseStats": { "hp": 120, "mana": 20, "attack": 12, "defense": 8, "speed": 8 },
+  "statsPerLevel": { "hp": 12, "mana": 2, "attack": 2, "defense": 2, "speed": 1 }
+}
+```
+
+La forme d'un personnage, identique en liste et en détail, est donnée en section 3.2.
+
+**Règles :**
+- **Classes.** Ce sont des données de référence, en lecture seule : aucune route ne les crée ni ne les modifie, administrateur compris. Seul le seed les met à jour.
+- **Création.** Le client fournit uniquement `name` et `classId`. Tout autre champ (`level`, `experience`, `currentZoneId`, `userId`, statistiques…) est refusé en 400. Le serveur fixe le niveau 1, l'XP 0 et la zone de départ.
+- **Nom.** De 3 à 16 lettres ASCII (`A-Z`, `a-z`), sans accent, espace, chiffre ni autre caractère. Message : « Must be 3 to 16 letters (A-Z, a-z) ». Le nom est conservé tel que saisi, et unique sur le serveur sans tenir compte de la casse.
+- **Ordre des contrôles.** Validation (400), puis existence de la classe (422), puis limite de 5 personnages par compte (409 `CHARACTER_LIMIT_REACHED`), puis nom disponible (409 `CHARACTER_NAME_TAKEN`).
+- **Créations simultanées.** La limite est appliquée dans une transaction qui verrouille le compte : des créations simultanées ne peuvent pas la dépasser.
+- **Propriété.** Le propriétaire est toujours l'utilisateur du jeton. Un personnage n'est visible que par son propriétaire, sans exception pour les administrateurs.
+- **Statistiques.** Elles ne figurent pas dans ces réponses : elles seront exposées par `GET /api/v1/characters/:characterId/stats` (STAT-01, STAT-02).
+- **Routes absentes.** Renommage et suppression (CHAR-06, CHAR-07) n'existent pas encore : 404 `ROUTE_NOT_FOUND` avec un jeton.
+
 ## 2. Requêtes
 
 - **Format :**
@@ -262,15 +296,15 @@ Lecture (200), `GET /api/v1/characters/:characterId` :
     "id": "0193a5f2-7c1e-7b3a-9d2f-4e8b1c6a2f10",
     "name": "Arthas",
     "classId": "0193a5f1-1b2c-7d4e-8f90-a1b2c3d4e5f6",
-    "level": 12,
-    "currentZoneId": null,
-    "isAlive": true,
+    "level": 3,
+    "experience": 120,
+    "currentZoneId": "0193a5f0-9a8b-7c6d-8e5f-4a3b2c1d0e9f",
     "createdAt": "2026-11-17T11:43:00.000Z"
   }
 }
 ```
 
-*Les champs réels d'un personnage seront définis par CHAR-02.*
+Champs d'un personnage (CHAR-02, section 1.6) : `id`, `name`, `classId`, `level` (1 à 10), `experience` (XP acquise dans le niveau courant), `currentZoneId`, `createdAt`. Ni propriétaire, ni nom normalisé, ni statistiques.
 
 Création (201), `POST /api/v1/characters` : même forme, avec la ressource créée dans `data`.
 
@@ -283,8 +317,8 @@ Création (201), `POST /api/v1/characters` : même forme, avec la ressource cré
     "name": "Arthas",
     "classId": "0193a5f1-1b2c-7d4e-8f90-a1b2c3d4e5f6",
     "level": 1,
-    "currentZoneId": null,
-    "isAlive": true,
+    "experience": 0,
+    "currentZoneId": "0193a5f0-9a8b-7c6d-8e5f-4a3b2c1d0e9f",
     "createdAt": "2026-11-17T11:43:00.000Z"
   }
 }
@@ -504,6 +538,10 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
 | `ACCOUNT_DISABLED` | 403 | `POST /api/v1/auth/login` (compte désactivé, mot de passe correct) | AUTH-06 |
 | `UNAUTHENTICATED` | 401 | Toute route protégée : jeton absent, invalide, expiré, révoqué ou compte désactivé | AUTH-07 |
 | `FORBIDDEN` | 403 | `GET /api/v1/users` pour un joueur | AUTH-08 |
+| `CLASS_NOT_FOUND` | 404 / 422 | `GET /api/v1/classes/:classId` (404) ; `POST /api/v1/characters` avec un `classId` inconnu (422) | CHAR-01, CHAR-03 |
+| `CHARACTER_LIMIT_REACHED` | 409 | `POST /api/v1/characters` (5 personnages déjà créés) | CHAR-03 |
+| `CHARACTER_NAME_TAKEN` | 409 | `POST /api/v1/characters` (nom déjà utilisé, quelle que soit la casse) | CHAR-03 |
+| `CHARACTER_NOT_FOUND` | 404 | `GET /api/v1/characters/:characterId` (inexistant ou d'un autre joueur) | CHAR-05 |
 
 ## 7. Identifiants et autorisations
 
@@ -511,7 +549,7 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
 - **En base**, les identifiants sont des UUID v7 générés par PostgreSQL 18 (`uuidv7()`) et stockés dans le type `uuid` natif (voir `docs/architecture/database.md`, SET-04). Un UUID v7 laisse lire son instant de création, à la milliseconde : cette information n'est pas considérée comme confidentielle.
 - Le serveur valide le **format** des identifiants reçus : un format invalide donne 400.
 - **Un UUID ne remplace jamais un contrôle d'autorisation.** Le fait qu'un identifiant soit impossible à deviner n'est pas une protection : chaque accès vérifie, côté serveur, l'authentification, la propriété de la ressource et les permissions.
-- **Routes publiques** (sans jeton) : `GET /health`, `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, et les données de référence sans propriétaire quand elles existeront (`GET /api/v1/classes`, décision de CHAR-01). **Toutes les autres routes de `/api/v1` sont protégées** (section 1.5) : elles exigent un jeton valide, puis appliquent leurs règles de propriété et de rôle dans les services.
+- **Routes publiques** (sans jeton) : `GET /health`, `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `GET /api/v1/classes` et `GET /api/v1/classes/:classId` (données de référence sans propriétaire, CHAR-01). **Toutes les autres routes de `/api/v1` sont protégées** (section 1.5) : elles exigent un jeton valide, puis appliquent leurs règles de propriété et de rôle dans les services.
 - **Administration locale :** le rôle (`PLAYER`, `ADMIN`) et le statut (`ACTIVE`, `DISABLED`) d'un compte existant se changent uniquement par `npm run account -- promote|demote|disable|enable <email>`, exécuté sur le serveur. Ce script ne crée jamais de compte ; une adresse inconnue est signalée (code de sortie 1) sans rien modifier.
 
 ## 8. Nommage
@@ -643,3 +681,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | 2026-11-23 | Utilisateurs persistants (DB-04) : identifiants UUID dans `/api/v1/users/:id`, email en minuscules, tri par date de création, plus d'utilisateurs initiaux (section 1.3) ; changement cassant admis (section 13) |
 | 2026-11-23 | Inscription `POST /api/v1/auth/register` (AUTH-01, AUTH-03, AUTH-04) ; suppression des routes `/api/v1/users` en attendant leurs permissions ; champ `role` dans la forme publique d'un compte (section 1.4) ; changement cassant admis (section 13) |
 | 2026-11-24 | Authentification (AUTH-02, AUTH-05 à AUTH-10) : connexion, déconnexion, jeton `Bearer`, routes `/api/v1/users` réintroduites avec permissions (sans POST ni PUT), `/users/me`, liste paginée ; codes `INVALID_CREDENTIALS`, `ACCOUNT_DISABLED`, `UNAUTHENTICATED`, `FORBIDDEN` ; routes publiques et protégées (sections 1.5 et 7) ; changement cassant admis (section 13) |
+| 2026-11-24 | Classes et personnages (CHAR-01 à CHAR-05) : `GET /api/v1/classes`, `POST` et `GET /api/v1/characters`, `GET /api/v1/characters/:characterId` ; champs réels d'un personnage (section 3.2) ; codes `CLASS_NOT_FOUND`, `CHARACTER_LIMIT_REACHED`, `CHARACTER_NAME_TAKEN`, `CHARACTER_NOT_FOUND` (section 1.6) ; changement additif (section 13) |

@@ -3,12 +3,16 @@ import { vi } from 'vitest'
 import type { AuthService } from '../../src/services/auth.service'
 import type { PasswordHasher } from '../../src/services/password-hasher'
 import type { UserService } from '../../src/services/user.service'
+import type { CharacterRepository } from '../../src/repositories/character.repository'
+import type { CharacterClassService } from '../../src/services/character-class.service'
+import type { CharacterService } from '../../src/services/character.service'
+import type { InMemoryCharacterClassRepository } from './in-memory-character-class-repository'
 import type { User, UserRole, UserStatus } from '../../src/types/user'
 import type { InMemorySessionRepository } from './in-memory-session-repository'
 import type { InMemoryUserRepository } from './in-memory-user-repository'
 import type { TestClock } from './test-clock'
 
-export type { AuthService, UserService }
+export type { AuthService, CharacterService, UserService }
 
 /** Durée de session des tests : 24 heures, comme la valeur par défaut (SESSION_TTL_HOURS). */
 export const TEST_SESSION_TTL_MS = 24 * 60 * 60 * 1000
@@ -22,9 +26,14 @@ export interface FreshApp {
     /** Services utilisés par les routes de CETTE application : ils peuvent être espionnés (vi.spyOn). */
     authService: AuthService
     userService: UserService
+    characterClassService: CharacterClassService
+    characterService: CharacterService
     /** Repositories contrôlés (en mémoire) de cette application. */
     userRepository: InMemoryUserRepository
     sessionRepository: InMemorySessionRepository
+    /** Les trois classes de référence du seed, avec des identifiants générés. */
+    characterClassRepository: InMemoryCharacterClassRepository
+    characterRepository: CharacterRepository
     /** Hachage rapide des tests (voir fake-password-hasher.ts). */
     passwordHasher: PasswordHasher
     /** Horloge de l'authentification : clock.advance() fait expirer les sessions sans attendre. */
@@ -53,6 +62,10 @@ export async function loadFreshApp(): Promise<FreshApp> {
     const { createInMemorySessionRepository } = await import('./in-memory-session-repository')
     const { createFakePasswordHasher } = await import('./fake-password-hasher')
     const { createTestClock } = await import('./test-clock')
+    const { createCharacterClassService } = await import('../../src/services/character-class.service')
+    const { createCharacterService } = await import('../../src/services/character.service')
+    const { createInMemoryCharacterClassRepository } = await import('./in-memory-character-class-repository')
+    const { createInMemoryCharacterRepository } = await import('./in-memory-character-repository')
 
     const userRepository = createInMemoryUserRepository()
     const sessionRepository = createInMemorySessionRepository(userRepository)
@@ -66,12 +79,20 @@ export async function loadFreshApp(): Promise<FreshApp> {
         now: clock.now
     })
     const userService = createUserService(userRepository)
+    const characterClassRepository = createInMemoryCharacterClassRepository()
+    const characterRepository = createInMemoryCharacterRepository({ users: userRepository, classes: characterClassRepository })
+    const characterClassService = createCharacterClassService(characterClassRepository)
+    const characterService = createCharacterService({ characterRepository, characterClassRepository })
     return {
-        app: createApp({ authService, userService }),
+        app: createApp({ authService, userService, characterClassService, characterService }),
         authService,
         userService,
+        characterClassService,
+        characterService,
         userRepository,
         sessionRepository,
+        characterClassRepository,
+        characterRepository,
         passwordHasher,
         clock
     }

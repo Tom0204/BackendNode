@@ -26,6 +26,16 @@ export class ReferenceNotFoundError extends Error {
     }
 }
 
+/** Une limite de capacité est atteinte (nombre maximal de personnages par compte…). */
+export class LimitReachedError extends Error {
+    readonly kind = 'LIMIT_REACHED'
+
+    constructor(public readonly resource: string, public readonly limit: number) {
+        super(`Limit of ${limit} ${resource} reached`)
+        this.name = 'LimitReachedError'
+    }
+}
+
 function hasKind(error: unknown, kind: string): boolean {
     return typeof error === 'object' && error !== null && 'kind' in error && error.kind === kind
 }
@@ -36,6 +46,10 @@ export function isUniqueConstraintError(error: unknown): error is UniqueConstrai
 
 export function isReferenceNotFoundError(error: unknown): error is ReferenceNotFoundError {
     return hasKind(error, 'REFERENCE_NOT_FOUND')
+}
+
+export function isLimitReachedError(error: unknown): error is LimitReachedError {
+    return hasKind(error, 'LIMIT_REACHED')
 }
 
 // Codes d'erreur de Prisma utilisés par les repositories.
