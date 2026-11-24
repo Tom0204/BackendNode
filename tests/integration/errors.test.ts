@@ -9,7 +9,7 @@ import { expectErrorResponse } from '../helpers/http'
 import { createLogCapture, LOG_LEVELS } from '../helpers/log-capture'
 
 // Chemin écrit en clair : les tests décrivent le contrat public de l'API.
-const USERS = '/api/v1/users'
+const REGISTER = '/api/v1/auth/register'
 
 let app: Express
 
@@ -27,7 +27,7 @@ describe('route inconnue', () => {
     })
 
     it('méthode non prévue sur un chemin existant : 404 ROUTE_NOT_FOUND', async () => {
-        const response = await request(app).put(USERS)
+        const response = await request(app).put(REGISTER)
         expectErrorResponse(response, 404, 'ROUTE_NOT_FOUND', [])
     })
 })
@@ -35,7 +35,7 @@ describe('route inconnue', () => {
 describe('corps de requête rejetés par express.json()', () => {
     it('JSON illisible : 400 INVALID_JSON (non-régression)', async () => {
         const response = await request(app)
-            .post(USERS)
+            .post(REGISTER)
             .set('Content-Type', 'application/json')
             .send('{bad')
 
@@ -46,7 +46,7 @@ describe('corps de requête rejetés par express.json()', () => {
     it('corps trop volumineux : 413 PAYLOAD_TOO_LARGE', async () => {
         // Environ 200 Ko, au-delà de la limite par défaut d'express.json() (100 Ko).
         const response = await request(app)
-            .post(USERS)
+            .post(REGISTER)
             .send({ name: 'a'.repeat(200_000), email: 'big@example.com' })
 
         expectErrorResponse(response, 413, 'PAYLOAD_TOO_LARGE', [])
@@ -55,7 +55,7 @@ describe('corps de requête rejetés par express.json()', () => {
 
     it('jeu de caractères non pris en charge : 415 UNSUPPORTED_MEDIA_TYPE', async () => {
         const response = await request(app)
-            .post(USERS)
+            .post(REGISTER)
             .set('Content-Type', 'application/json; charset=iso-8859-1')
             .send('{"name":"A","email":"a@example.com"}')
 

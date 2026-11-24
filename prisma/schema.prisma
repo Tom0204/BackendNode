@@ -24,15 +24,26 @@ datasource db {
 
 /// Compte joueur. Mot de passe, rôle et états de compte : AUTH-01.
 model User {
-  id         String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  name       String
+  id           String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name         String
   /// Toujours en minuscules (CHECK) : l'unicité ne dépend pas de la casse.
-  email      String      @unique
-  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
-  characters Character[]
+  email        String      @unique
+  /// Hash Argon2id du mot de passe (AUTH-01, AUTH-03). Jamais lu par les repositories hors authentification.
+  passwordHash String      @map("password_hash")
+  /// Rôle du compte (AUTH-01). Les autres rôles et les permissions relèvent d'AUTH-08.
+  role         UserRole    @default(PLAYER)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  characters   Character[]
 
   @@map("users")
+}
+
+/// Rôles des comptes. PLAYER seul pour l'instant : les rôles supplémentaires (administrateur) sont décidés en AUTH-08.
+enum UserRole {
+  PLAYER
+
+  @@map("user_role")
 }
 
 /// Personnage d'un joueur. Les statistiques ne sont pas stockées : elles se calculent

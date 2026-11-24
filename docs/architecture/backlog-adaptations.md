@@ -27,7 +27,11 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du d�
 | DB-01 | Réalisé et vérifié avec Docker | `f858ab4` |
 | DB-02 | Réalisé (voir `docs/architecture/data-model.md`) | `d6285f5` |
 | DB-03 | Réalisé (migration `init`, seed des données de référence) | `d6285f5` |
-| DB-04 | Réalisé (repositories persistants) | — |
+| DB-04 | Validé (repositories persistants) | `037dd8e` |
+| AUTH-01 | Réalisé (hash du mot de passe et rôle ; statut de compte reporté à AUTH-06) | — |
+| AUTH-02 | **Partiel** : routes `/users` supprimées, DTO public ; permissions reportées après AUTH-07 et AUTH-08 | — |
+| AUTH-03 | Réalisé (Argon2id) | — |
+| AUTH-04 | Réalisé (`POST /api/v1/auth/register`) | — |
 
 ## Ordre de réalisation
 
@@ -722,6 +726,76 @@ Les accès à la base passent uniquement par les repositories Prisma ; les servi
 - Sans base : contrat sur le repository en mémoire (9), `asyncHandler` (3), service (21, asynchrone, UUID, email en minuscules), API `/users` (31, dont 400 sur un identifiant non UUID, 409 sans casse, 500 sur une erreur asynchrone), validation (UUID).
 - Avec base : contrat sur Prisma (9) et spécificités PostgreSQL (3) ; personnages (9 : zone de départ, `normalized_name`, nom unique sans casse, références inexistantes, tri, comptage, cascade) ; API sur PostgreSQL (2) avec **deux instances d'application indépendantes** (modules rechargés, nouveau pool et nouveau client, première connexion fermée) : les données créées par la première sont relues par la seconde.
 - Vérifié aussi : aucune référence à Prisma dans `src/services`, `src/controllers` et `src/routes` ; schéma et base migrée sans écart ; test manuel avec `npm run dev` (création, arrêt, redémarrage, relecture, puis suppression de l'utilisateur de test).
+
+## Comptes et inscription (AUTH-01, AUTH-03, AUTH-04 ; AUTH-02 partiel)
+
+Lot L1 de l'EPIC 03. Un compte se crée uniquement par `POST /api/v1/auth/register`, avec un mot de passe hashé en Argon2id. Les routes `/api/v1/users` sont retirées jusqu'à la mise en place des permissions.
+
+### Décisions validées
+
+| # | Décision |
+|---|---|
+| D1 | Table `users` : `password_hash` (texte, obligatoire) et `role` (énumération `user_role`, `PLAYER` par défaut). **Pas de statut de compte** : aucun critère d'AUTH-01 à AUTH-04 ne l'exige, le refus d'un compte désactivé relève d'AUTH-06 (précision SET-05) |
+| D1 bis | `user_role` ne contient que `PLAYER` : AUTH-01 demande le champ, AUTH-08 décide des rôles (« administrateur si retenu ») et l'ajoutera par une migration (`ALTER TYPE … ADD VALUE`, non destructive) |
+| D2 | `name` conservé, obligatoire à l'inscription |
+| D3 | Argon2id (paquet `argon2`), paramètres OWASP : 19 Mio, 2 passes, 1 fil (`src/config/auth.ts`). Hachage injectable (`PasswordHasher`) : Argon2id dans `server.ts`, hachage rapide dans les tests sans base |
+| D4 | Mot de passe de 15 à 128 caractères Unicode, sans règle de composition, sans confirmation ; valeur ni rognée ni normalisée |
+| D5 | Email : format vérifié (`z.email()`), 254 caractères au plus, mis en minuscules par le service |
+| D6 | Réponse 201 : `{ id, name, email, role }` ; aucun jeton émis (AUTH-05, AUTH-06) |
+| D7 | Seule `POST /api/v1/auth/register` est publique. Les six routes `/api/v1/users` sont **supprimées** (404 `ROUTE_NOT_FOUND`) et seront réintroduites avec leurs permissions (AUTH-02 après AUTH-07 et AUTH-08 ; AUTH-09 pour `/users/me`) |
+| D8 | Migration `auth_user_fields` générée sans être appliquée (`--create-only`), relue, puis appliquée après vérification que `users` était vide dans `mmorpg_dev` et `mmorpg_test` (aucune réinitialisation, aucune suppression) |
+
+### Dépendance ajoutée
+
+| Paquet | Version | Raison |
+|---|---|---|
+| `argon2` | `^0.45.2` | Argon2id recommandé par le backlog (AUTH-03) et l'OWASP ; Node 22 ne fournit pas Argon2 (`crypto.argon2` n'existe qu'à partir de Node 24.7). Module natif : binaires précompilés installés sans compilation sous Windows (vérifié) |
+
+### Adaptations
+
+| Élément | Adaptation | Raison | Reprise |
+|---|---|---|---|
+| AUTH-02 | **Non terminé** : seules la suppression des routes publiques et la forme publique des réponses (DTO) sont faites ; permissions et tests propriétaire / autre utilisateur / administrateur reportés | Ils supposent l'authentification (AUTH-07) et les rôles (AUTH-08), placés après AUTH-02 dans le backlog | AUTH-02 après AUTH-07 et AUTH-08 |
+| `src/services/user.service.ts` | Conservé sans `create`, mais exposé par aucune route | Règles métier (modification, conflit d'email, suppression) réutilisables par AUTH-08 et AUTH-09 | AUTH-02, AUTH-09 |
+| `user.controller.ts`, `user.routes.ts`, `user.schema.ts` | Supprimés | Couche HTTP des routes retirées ; elle sera reconstruite avec les permissions | AUTH-02, AUTH-09 |
+| DTO public | `src/controllers/user.dto.ts` : liste blanche `id`, `name`, `email`, `role` ; le type `User` ne contient jamais le hash et le repository ne lit jamais `password_hash` | Critère « le DTO public n'expose aucun secret » | AUTH-06 ajoutera une lecture dédiée du hash |
+| Hachage avant l'écriture | Le hash est calculé même si l'email est déjà pris | La durée de la réponse ne révèle pas l'existence d'un compte | — |
+| Réponse 409 | Elle révèle qu'un email est déjà inscrit | Exigée par le backlog (AUTH-04) | QUAL-02 (limitation de débit dédiée) |
+| Logs | `passwordHash` ajouté aux clés masquées | Défense en profondeur ; aucun corps de requête n'est journalisé | — |
+| Postman | Aucune requête ajoutée | Collections prévues par DOC-01 | DOC-01 |
+
+### Fichiers créés ou modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `prisma/schema.prisma`, `prisma/migrations/20261123125545_auth_user_fields/` | Colonnes `password_hash`, `role` et énumération `user_role` |
+| `src/config/auth.ts`, `src/services/password-hasher.ts` | Règles du mot de passe et de l'email, hachage Argon2id |
+| `src/schemas/auth.schema.ts`, `src/services/auth.service.ts`, `src/controllers/auth.controller.ts`, `src/controllers/user.dto.ts`, `src/routes/auth.routes.ts` | Inscription |
+| `src/types/user.ts`, `src/repositories/user.repository.ts`, `src/services/user.service.ts` | Rôle, données d'un nouveau compte, hash jamais relu |
+| `src/routes/index.ts`, `src/app.ts`, `server.ts`, `src/config/logger.ts` | Montage de `/auth`, retrait de `/users`, assemblage, masquage |
+| `src/controllers/user.controller.ts`, `src/routes/user.routes.ts`, `src/schemas/user.schema.ts` | Supprimés |
+| `package.json`, `package-lock.json` | Dépendance `argon2` |
+
+### Tests : 316 sans base (`npm test`), 66 avec base (`npm run test:db`)
+
+- Sans base :
+  - Argon2id réel : format et paramètres du hash, sel aléatoire, vérification réussie et échouée, mot de passe Unicode de 128 caractères ;
+  - service d'inscription : email en minuscules, rôle `PLAYER`, hash vérifiable jamais égal au mot de passe, 409 (y compris avec une autre casse) sans création, hachage même en cas de conflit, erreurs propagées ;
+  - API : 201 avec le DTO exact, aucune trace du mot de passe, du hash ni d'un jeton ; 400 (corps vide, email invalide ou trop long, mot de passe de 14 caractères, de 14 emojis ou de 129 caractères, champs `role`, `passwordHash`, `id`, `passwordConfirmation` refusés) ; 409 ; routes `/api/v1/users` en 404 ;
+  - tests existants adaptés : contrat du repository (rôle, hash jamais renvoyé), service utilisateur sans `create`, protections HTTP, limitation du débit et erreurs passant par `/auth/register` ;
+  - `tests/integration/users.test.ts` supprimé avec les routes.
+- Avec base :
+  - contrat du repository sur Prisma ;
+  - hash enregistré et rôle par défaut ;
+  - `password_hash` obligatoire (23502) et rôle hors énumération refusé (22P02) ;
+  - `tests/database/auth-api.test.ts` remplace `users-api.test.ts`. Il utilise Argon2id réel et PostgreSQL, et vérifie le hash en base, deux hashs différents pour un même mot de passe, et la persistance avec une seconde instance indépendante (409 après redémarrage).
+- Vérifié aussi :
+  - tests en ordre aléatoire (deux passages) ;
+  - `npm run test:db` deux fois ;
+  - schéma et base migrée sans écart ;
+  - build OK ;
+  - aucune référence à Prisma ni à `argon2` dans les services (hors `password-hasher.ts`), les controllers ou les routes.
+- Vérification manuelle du serveur compilé (`node dist/server.cjs`, port 3999, base `mmorpg_test`) : `/health` 200 ; inscription 201 avec `{ id, name, email, role }` ; 409 pour le même email dans une autre casse ; 400 pour un mot de passe trop court ; `/api/v1/users` 404 ; hash `$argon2id$v=19$m=19456,t=2,p=1$` en base ; aucun mot de passe ni hash dans les logs.
 
 ## Décisions de fonctionnement
 

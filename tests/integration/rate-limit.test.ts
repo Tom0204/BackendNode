@@ -16,7 +16,8 @@ import { expectErrorResponse, expectSuccessResponse } from '../helpers/http'
 import { createLogCapture, LOG_LEVELS } from '../helpers/log-capture'
 
 // Chemin écrit en clair : les tests décrivent le contrat public de l'API.
-const USERS = '/api/v1/users'
+// Seule route de /api/v1 depuis AUTH-04 : POST uniquement, un GET y donne 404 (toujours soumis au quota).
+const REGISTER = '/api/v1/auth/register'
 
 /**
  * Petite application avec un VRAI limiteur (limite basse pour garder le test rapide),
@@ -192,7 +193,7 @@ describe('limiteur strict (prêt pour QUAL-02, non branché)', () => {
         const { app } = await loadFreshApp()
 
         // Seul le limiteur global s'applique : 300 requêtes par fenêtre de 60 secondes.
-        const response = await request(app).get(USERS)
+        const response = await request(app).get(REGISTER)
         expect(response.headers['ratelimit-policy']).toBe('300;w=60')
     })
 })
@@ -206,12 +207,12 @@ describe("limiteur global de l'application (/api/v1)", () => {
     })
 
     it('300 requêtes par minute : la 301e reçoit 429 RATE_LIMITED, /health reste disponible', async () => {
-        const statuses = await sendSequentially(app, USERS, 300)
-        expect(statuses.every((status) => status === 200)).toBe(true)
+        const statuses = await sendSequentially(app, REGISTER, 300)
+        expect(statuses.every((status) => status === 404)).toBe(true)
 
-        expectErrorResponse(await request(app).get(USERS), 429, 'RATE_LIMITED', [])
+        expectErrorResponse(await request(app).get(REGISTER), 429, 'RATE_LIMITED', [])
         // Le quota est commun à toutes les routes de /api/v1, y compris les chemins inconnus.
-        expectErrorResponse(await request(app).get(`${USERS}/1`), 429, 'RATE_LIMITED', [])
+        expectErrorResponse(await request(app).post(REGISTER).send({}), 429, 'RATE_LIMITED', [])
         expectErrorResponse(await request(app).get('/api/v1/inconnue'), 429, 'RATE_LIMITED', [])
         // /health et les routes hors /api/v1 ne sont pas limitées.
         expectSuccessResponse(await request(app).get('/health'), 200, 'Service is healthy', { status: 'OK' })
@@ -224,23 +225,23 @@ describe("limiteur global de l'application (/api/v1)", () => {
     })
 
     it('les requêtes rejetées pour leur corps (415, 413) comptent dans le quota', async () => {
-        const rejected = await request(app).post(USERS).set('Content-Type', 'text/plain').send('texte')
+        const rejected = await request(app).post(REGISTER).set('Content-Type', 'text/plain').send('texte')
         expect(rejected.status).toBe(415)
         expect(rejected.headers.ratelimit).toMatch(/^limit=300, remaining=299, /)
 
-        const tooLarge = await request(app).post(USERS).send({ name: 'a'.repeat(11 * 1024), email: 'x@example.com' })
+        const tooLarge = await request(app).post(REGISTER).send({ name: 'a'.repeat(11 * 1024), email: 'x@example.com' })
         expect(tooLarge.status).toBe(413)
         expect(tooLarge.headers.ratelimit).toMatch(/^limit=300, remaining=298, /)
     })
 
     it('une préflight OPTIONS sur /api/v1 ne consomme pas le quota', async () => {
         const preflight = await request(app)
-            .options(USERS)
+            .options(REGISTER)
             .set('Origin', 'https://jeu.example.com')
             .set('Access-Control-Request-Method', 'POST')
         expect(preflight.status).toBe(204)
 
-        const response = await request(app).get(USERS)
+        const response = await request(app).get(REGISTER)
         expect(response.headers.ratelimit).toMatch(/^limit=300, remaining=299, /)
     })
 })

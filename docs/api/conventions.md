@@ -54,6 +54,47 @@ Ce changement cassant est admis par la section 13 (aucun client ne consomme enco
 
 Les champs renvoyés restent `id`, `name` et `email`. Ce changement cassant est admis par la section 13 (aucun client ne consomme encore l'API).
 
+> Depuis AUTH-04, ces routes `/api/v1/users` sont retirées : voir section 1.4.
+
+### 1.4 Inscription et retrait des routes `/users` (AUTH-01, AUTH-03, AUTH-04)
+
+`POST /api/v1/auth/register` est la seule route publique de gestion des comptes. Les six routes `/api/v1/users` (liste, lecture, création, remplacement, modification, suppression) sont supprimées et renvoient 404 `ROUTE_NOT_FOUND` : elles seront réintroduites avec leurs permissions (AUTH-02 après AUTH-07 et AUTH-08, AUTH-09 pour `/users/me`).
+
+| Champ du corps | Règle |
+|---|---|
+| `name` | Obligatoire, au moins un caractère non blanc |
+| `email` | Obligatoire, format email valide (`Must be a valid email`), 254 caractères au plus ; enregistré en minuscules |
+| `password` | Obligatoire, 15 à 128 caractères Unicode (`Must be at least 15 characters`, `Must be at most 128 characters`), sans règle de composition ; ni rogné ni normalisé ; hashé en Argon2id, jamais renvoyé ni journalisé |
+| Tout autre champ (`role`, `passwordHash`, `passwordConfirmation`…) | Refusé : 400 `Unknown field` |
+
+```http
+POST /api/v1/auth/register HTTP/1.1
+Content-Type: application/json
+
+{ "name": "Alice", "email": "Alice@Example.com", "password": "correct horse battery staple" }
+```
+
+```json
+{
+  "success": true,
+  "message": "User registered successfully",
+  "data": {
+    "id": "0193a5f4-2b3c-7d4e-9f50-617283940a1b",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "role": "PLAYER"
+  }
+}
+```
+
+| Cas | Statut |
+|---|---|
+| Compte créé | 201, sans jeton (la connexion relève d'AUTH-05 et AUTH-06) |
+| Corps invalide (champ manquant ou inconnu, email invalide, mot de passe trop court ou trop long) | 400 `VALIDATION_ERROR` |
+| Email déjà utilisé, quelle que soit la casse | 409 `EMAIL_ALREADY_USED` |
+
+La forme publique d'un compte est `{ id, name, email, role }` : ni mot de passe, ni hash, ni dates. Le seul rôle existant est `PLAYER` ; les autres rôles sont décidés en AUTH-08. Ce changement cassant (suppression des routes `/users`) est admis par la section 13.
+
 ## 2. Requêtes
 
 - **Format :**
@@ -405,8 +446,8 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
 
 | Code | Statut | Endpoints | Ticket |
 |---|---|---|---|
-| `USER_NOT_FOUND` | 404 | `GET`, `PUT`, `PATCH`, `DELETE /api/v1/users/:id` | FND-03 (chemins mis à jour en FND-07) |
-| `EMAIL_ALREADY_USED` | 409 | `POST /api/v1/users`, `PUT /api/v1/users/:id`, `PATCH /api/v1/users/:id` | FND-03 (chemins mis à jour en FND-07) |
+| `USER_NOT_FOUND` | 404 | Aucun endpoint depuis le retrait des routes `/api/v1/users` ; réservé à leur réintroduction | FND-03 (AUTH-04) |
+| `EMAIL_ALREADY_USED` | 409 | `POST /api/v1/auth/register` | FND-03 (AUTH-04) |
 
 ## 7. Identifiants et autorisations
 
@@ -528,7 +569,7 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | Routes sans préfixe `/api/v1`, réponses sans enveloppe, route `GET /` | Réalisé (FND-07) : voir section 1.2 |
 | Corps envoyé dans un autre format que JSON, refusé en 400 au lieu de 415 | Réalisé (FND-08) |
 | Identifiants numériques | Réalisé (DB-04) : voir section 1.3 |
-| Accès sans autorisation | AUTH-02 |
+| Accès sans autorisation | Routes `/api/v1/users` supprimées (AUTH-04, section 1.4) ; permissions à leur réintroduction (AUTH-02, après AUTH-07 et AUTH-08) |
 
 ## 16. Historique
 
@@ -542,3 +583,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | 2026-11-18 | Protections HTTP (FND-08) : corps JSON de 10 Ko au plus, 415 pour un corps qui n'est pas en JSON, limitation du débit et 429, CORS selon `CORS_ORIGINS`, en-têtes de sécurité ; le passage de 400 à 415 et la baisse de la limite de 100 Ko à 10 Ko sont des changements cassants admis (section 13) |
 | 2026-11-20 | Identifiants en base : UUID v7 générés par PostgreSQL 18, choix finalisé (SET-04) ; précision sans effet sur le contrat actuel de l'API |
 | 2026-11-23 | Utilisateurs persistants (DB-04) : identifiants UUID dans `/api/v1/users/:id`, email en minuscules, tri par date de création, plus d'utilisateurs initiaux (section 1.3) ; changement cassant admis (section 13) |
+| 2026-11-23 | Inscription `POST /api/v1/auth/register` (AUTH-01, AUTH-03, AUTH-04) ; suppression des routes `/api/v1/users` en attendant leurs permissions ; champ `role` dans la forme publique d'un compte (section 1.4) ; changement cassant admis (section 13) |

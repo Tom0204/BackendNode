@@ -2,7 +2,10 @@ import type { Request, Response } from 'express'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { validateRequest, type RequestSchemas } from '../../src/middlewares/validation.middleware'
-import { createUserBodySchema, userIdParamsSchema } from '../../src/schemas/user.schema'
+
+// Schémas d'exemple : le middleware est générique (les schémas des routes sont testés avec leurs routes).
+const idParamsSchema = z.strictObject({ id: z.uuid('Must be a valid UUID') })
+const nameEmailBodySchema = z.strictObject({ name: z.string(), email: z.string() })
 
 interface FakeRequestParts {
     params?: Record<string, string>
@@ -34,7 +37,7 @@ describe('validateRequest', () => {
 
     it('valide les paramètres de chemin sans les convertir', () => {
         const id = '0193a5f4-2b3c-7d4e-9f50-617283940a1b'
-        const { req, next } = runValidation({ params: userIdParamsSchema }, { params: { id } })
+        const { req, next } = runValidation({ params: idParamsSchema }, { params: { id } })
 
         expect(next).toHaveBeenCalledWith()
         expect(req.params.id).toBe(id)
@@ -42,7 +45,7 @@ describe('validateRequest', () => {
 
     it('signale chaque champ manquant, sans remplacer le corps', () => {
         const body = {}
-        const { req, next, error } = runValidation({ body: createUserBodySchema }, { body })
+        const { req, next, error } = runValidation({ body: nameEmailBodySchema }, { body })
 
         expect(next).toHaveBeenCalledTimes(1)
         expect(error).toMatchObject({
@@ -58,7 +61,7 @@ describe('validateRequest', () => {
 
     it('refuse un champ inconnu dans le corps', () => {
         const { error } = runValidation(
-            { body: createUserBodySchema },
+            { body: nameEmailBodySchema },
             { body: { name: 'Al', email: 'al@example.com', level: 50 } }
         )
         expect(error).toMatchObject({
@@ -75,8 +78,8 @@ describe('validateRequest', () => {
         })
     })
 
-    it.each(['abc', '1'])('refuse un identifiant qui n’est pas un UUID : %s (non-régression de FND-04, UUID depuis DB-04)', (id) => {
-        const { error } = runValidation({ params: userIdParamsSchema }, { params: { id } })
+    it.each(['abc', '1'])('refuse un identifiant qui n’est pas un UUID : %s (format des identifiants depuis DB-04)', (id) => {
+        const { error } = runValidation({ params: idParamsSchema }, { params: { id } })
         expect(error).toMatchObject({
             code: 'VALIDATION_ERROR',
             details: [{ field: 'id', message: 'Must be a valid UUID' }]
@@ -84,7 +87,7 @@ describe('validateRequest', () => {
     })
 
     it("nomme l'emplacement quand l'erreur porte sur le corps entier", () => {
-        const { error } = runValidation({ body: createUserBodySchema }, { body: [] })
+        const { error } = runValidation({ body: nameEmailBodySchema }, { body: [] })
         expect(error).toMatchObject({
             code: 'VALIDATION_ERROR',
             details: [{ field: 'body', message: expect.any(String) }]
@@ -113,7 +116,7 @@ describe('validateRequest', () => {
 
     it('regroupe les erreurs de tous les emplacements dans un seul appel à next', () => {
         const { next, error } = runValidation(
-            { params: userIdParamsSchema, body: createUserBodySchema },
+            { params: idParamsSchema, body: nameEmailBodySchema },
             { params: { id: 'abc' }, query: { foo: '1' }, body: {} }
         )
 

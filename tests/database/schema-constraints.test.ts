@@ -16,6 +16,8 @@ const UNIQUE_VIOLATION = '23505'
 // Suppression bloquée par ON DELETE RESTRICT (et non 23503, réservé aux références invalides).
 const RESTRICT_VIOLATION = '23001'
 const NOT_NULL_VIOLATION = '23502'
+// Valeur hors d'une énumération PostgreSQL.
+const INVALID_TEXT_REPRESENTATION = '22P02'
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
@@ -66,6 +68,25 @@ describe('users', () => {
         const violation = await violationOf((tx) => createTestUser(tx, 'Player@Test.local'))
         expect(violation).toMatchObject({ sqlState: CHECK_VIOLATION })
         expect(violation.message).toContain('users_email_lowercase_check')
+    })
+
+    it('attribue le rôle PLAYER par défaut (AUTH-01)', async () => {
+        expect(await createTestUser(database.prisma)).toMatchObject({ role: 'PLAYER' })
+    })
+
+    it('refuse un compte sans hash de mot de passe (password_hash obligatoire, AUTH-01)', async () => {
+        const violation = await violationOf(
+            (tx) => tx.$executeRaw`INSERT INTO users (name, email, updated_at) VALUES ('Sans mot de passe', 'nopassword@test.local', now())`
+        )
+        expect(violation).toMatchObject({ sqlState: NOT_NULL_VIOLATION })
+        expect(violation.message).toContain('password_hash')
+    })
+
+    it('refuse un rôle hors de l’énumération user_role', async () => {
+        const violation = await violationOf(
+            (tx) => tx.$executeRaw`INSERT INTO users (name, email, password_hash, role, updated_at) VALUES ('Admin', 'admin@test.local', 'hash', 'ADMIN', now())`
+        )
+        expect(violation).toMatchObject({ sqlState: INVALID_TEXT_REPRESENTATION })
     })
 
     it('refuse un email déjà utilisé', async () => {

@@ -3,9 +3,10 @@ import { createUserService, type UserService } from '../../src/services/user.ser
 import type { User } from '../../src/types/user'
 import { rejectionOf } from '../helpers/errors'
 import { createInMemoryUserRepository } from '../helpers/in-memory-user-repository'
-import { UNKNOWN_USER_ID } from '../helpers/user-repository-contract'
+import { newUser, UNKNOWN_USER_ID } from '../helpers/user-repository-contract'
 
-/* Service utilisateur (DB-04) : règles métier testées avec un repository contrôlé, sans base de données. */
+/* Service utilisateur (DB-04) : règles métier testées avec un repository contrôlé, sans base de données.
+ * La création d'un compte relève de l'inscription (tests/unit/auth.service.test.ts, AUTH-04). */
 
 let userService: UserService
 let alice: User
@@ -13,9 +14,10 @@ let bob: User
 
 beforeEach(async () => {
     // Service et repository neufs : chaque test part de deux utilisateurs.
-    userService = createUserService(createInMemoryUserRepository())
-    alice = await userService.create({ name: 'Alice', email: 'alice@example.com' })
-    bob = await userService.create({ name: 'Bob', email: 'bob@example.com' })
+    const repository = createInMemoryUserRepository()
+    userService = createUserService(repository)
+    alice = await repository.create(newUser('Alice', 'alice@example.com'))
+    bob = await repository.create(newUser('Bob', 'bob@example.com'))
 })
 
 describe('userService.getAll', () => {
@@ -33,37 +35,6 @@ describe('userService.getById', () => {
 
     it('lève USER_NOT_FOUND (404) pour un identifiant inconnu', async () => {
         expect(await rejectionOf(userService.getById(UNKNOWN_USER_ID))).toMatchObject({ status: 404, code: 'USER_NOT_FOUND' })
-    })
-})
-
-describe('userService.create', () => {
-    it('crée un utilisateur avec un nouvel identifiant', async () => {
-        const created = await userService.create({ name: 'Al', email: 'al@example.com' })
-
-        expect(created).toMatchObject({ name: 'Al', email: 'al@example.com' })
-        expect([alice.id, bob.id]).not.toContain(created.id)
-        expect(await userService.getAll()).toHaveLength(3)
-    })
-
-    it("enregistre l'email en minuscules", async () => {
-        expect(await userService.create({ name: 'Al', email: 'Al.Martin@Example.COM' })).toMatchObject({
-            email: 'al.martin@example.com'
-        })
-    })
-
-    it('refuse un email déjà utilisé (409 EMAIL_ALREADY_USED) sans rien créer', async () => {
-        expect(await rejectionOf(userService.create({ name: 'Copie', email: alice.email }))).toMatchObject({
-            status: 409,
-            code: 'EMAIL_ALREADY_USED'
-        })
-        expect(await userService.getAll()).toHaveLength(2)
-    })
-
-    it('refuse un email déjà utilisé avec une autre casse (409)', async () => {
-        expect(await rejectionOf(userService.create({ name: 'Copie', email: 'ALICE@Example.com' }))).toMatchObject({
-            status: 409,
-            code: 'EMAIL_ALREADY_USED'
-        })
     })
 })
 
@@ -168,8 +139,8 @@ describe('erreurs du repository', () => {
         const failure = new Error('base indisponible')
         const service = createUserService({
             ...createInMemoryUserRepository(),
-            create: () => Promise.reject(failure)
+            update: () => Promise.reject(failure)
         })
-        expect(await rejectionOf(service.create({ name: 'X', email: 'x@example.com' }))).toBe(failure)
+        expect(await rejectionOf(service.patch(UNKNOWN_USER_ID, { name: 'X' }))).toBe(failure)
     })
 })

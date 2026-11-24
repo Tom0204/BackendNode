@@ -4,7 +4,8 @@ import { createApp } from './src/app'
 import { checkDatabaseConnection, createDatabase } from './src/database/client'
 import { describeDatabaseError } from './src/database/errors'
 import { createPrismaUserRepository } from './src/repositories/user.repository'
-import { createUserService } from './src/services/user.service'
+import { createAuthService } from './src/services/auth.service'
+import { createArgon2PasswordHasher } from './src/services/password-hasher'
 import { describeStartupError, startServer, systemErrorCode } from './src/startup'
 
 // Erreurs imprévues du processus : log fatal, écriture des logs, puis arrêt avec le code 1 (FND-05, décision D6).
@@ -55,8 +56,12 @@ async function start(): Promise<void> {
         return
     }
 
-    // Assemblage (DB-04) : repositories Prisma → services → application.
-    const app = createApp({ userService: createUserService(createPrismaUserRepository(database.prisma)) })
+    // Assemblage (DB-04, AUTH-04) : repositories Prisma et hachage Argon2id → services → application.
+    const authService = createAuthService({
+        userRepository: createPrismaUserRepository(database.prisma),
+        passwordHasher: createArgon2PasswordHasher()
+    })
+    const app = createApp({ authService })
 
     try {
         await startServer(app, env.PORT)

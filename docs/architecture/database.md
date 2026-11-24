@@ -60,7 +60,7 @@ Particularités de Prisma 7 :
 - **Pourquoi la base :** une seule source de vérité, valable pour toute insertion (Prisma, seed SQL, `psql`), sans dépendance supplémentaire. Les UUID v7 sont ordonnés dans le temps, ce qui garde les index compacts.
 - **Dans l'API :** chaîne opaque (conventions §7). Un format invalide est refusé en 400 par un schéma UUID Zod.
 - **Limite :** un UUID v7 laisse lire son instant de création, à la milliseconde. C'est acceptable pour ce projet.
-- Les identifiants numériques actuels des utilisateurs (repository en mémoire) passeront en UUID avec DB-04.
+- Les identifiants numériques des utilisateurs (ancien repository en mémoire) ont été remplacés par des UUID avec DB-04.
 
 ## 4. Environnements et variables
 

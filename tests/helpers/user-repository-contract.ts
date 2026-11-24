@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { isUniqueConstraintError } from '../../src/repositories/errors'
 import type { UserRepository } from '../../src/repositories/user.repository'
+import type { NewUser } from '../../src/types/user'
 
 /* Contrat d'un repository utilisateur (DB-04).
  * La même suite est exécutée sur le repository en mémoire (npm test) et sur le repository Prisma
@@ -11,6 +12,12 @@ import type { UserRepository } from '../../src/repositories/user.repository'
 export const UNKNOWN_USER_ID = '00000000-0000-7000-8000-000000000000'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** Hash fictif : le repository enregistre ce qu'il reçoit, le hachage relève du service (AUTH-03). */
+export const CONTRACT_PASSWORD_HASH = 'contract-password-hash'
+
+/** Données d'un nouveau compte pour les tests de repository. */
+export const newUser = (name: string, email: string): NewUser => ({ name, email, passwordHash: CONTRACT_PASSWORD_HASH })
 
 /**
  * Déclare la suite de contrat.
@@ -24,25 +31,26 @@ export function describeUserRepositoryContract(label: string, getRepository: () 
             repository = getRepository()
         })
 
-        it('create : renvoie l’utilisateur avec un UUID et ses dates', async () => {
-            const user = await repository.create({ name: 'Alice', email: 'alice@test.local' })
-            expect(user).toMatchObject({ name: 'Alice', email: 'alice@test.local' })
+        it('create : renvoie l’utilisateur avec un UUID, le rôle PLAYER et ses dates, jamais le hash', async () => {
+            const user = await repository.create(newUser('Alice', 'alice@test.local'))
+            expect(user).toMatchObject({ name: 'Alice', email: 'alice@test.local', role: 'PLAYER' })
             expect(user.id).toMatch(UUID_PATTERN)
             expect(user.createdAt).toBeInstanceOf(Date)
             expect(user.updatedAt).toBeInstanceOf(Date)
-            expect(Object.keys(user).sort()).toEqual(['createdAt', 'email', 'id', 'name', 'updatedAt'])
+            expect(Object.keys(user).sort()).toEqual(['createdAt', 'email', 'id', 'name', 'role', 'updatedAt'])
+            expect(JSON.stringify(await repository.findAll())).not.toContain(CONTRACT_PASSWORD_HASH)
         })
 
         it('create : un email déjà utilisé lève UniqueConstraintError("email")', async () => {
-            await repository.create({ name: 'Alice', email: 'same@test.local' })
-            const error = await repository.create({ name: 'Bob', email: 'same@test.local' }).catch((e: unknown) => e)
+            await repository.create(newUser('Alice', 'same@test.local'))
+            const error = await repository.create(newUser('Bob', 'same@test.local')).catch((e: unknown) => e)
             expect(isUniqueConstraintError(error)).toBe(true)
             expect(error).toMatchObject({ field: 'email' })
             expect(await repository.findAll()).toHaveLength(1)
         })
 
         it('findById : renvoie l’utilisateur, ou undefined s’il est inconnu', async () => {
-            const created = await repository.create({ name: 'Alice', email: 'alice@test.local' })
+            const created = await repository.create(newUser('Alice', 'alice@test.local'))
             expect(await repository.findById(created.id)).toEqual(created)
             expect(await repository.findById(UNKNOWN_USER_ID)).toBeUndefined()
         })
@@ -50,7 +58,7 @@ export function describeUserRepositoryContract(label: string, getRepository: () 
         it('findAll : vide au départ, puis trié par date de création, puis identifiant (ordre stable)', async () => {
             expect(await repository.findAll()).toEqual([])
             for (const name of ['Un', 'Deux', 'Trois', 'Quatre']) {
-                await repository.create({ name, email: `${name.toLowerCase()}@test.local` })
+                await repository.create(newUser(name, `${name.toLowerCase()}@test.local`))
             }
             const users = await repository.findAll()
             const expectedOrder = [...users].sort(
@@ -63,20 +71,20 @@ export function describeUserRepositoryContract(label: string, getRepository: () 
         })
 
         it('update : modifie uniquement les champs fournis', async () => {
-            const created = await repository.create({ name: 'Alice', email: 'alice@test.local' })
+            const created = await repository.create(newUser('Alice', 'alice@test.local'))
             const updated = await repository.update(created.id, { name: 'Alicia' })
             expect(updated).toMatchObject({ id: created.id, name: 'Alicia', email: 'alice@test.local' })
             expect(updated?.createdAt).toEqual(created.createdAt)
         })
 
         it('update : accepte de conserver son propre email', async () => {
-            const created = await repository.create({ name: 'Alice', email: 'alice@test.local' })
+            const created = await repository.create(newUser('Alice', 'alice@test.local'))
             await expect(repository.update(created.id, { email: 'alice@test.local' })).resolves.toMatchObject({ id: created.id })
         })
 
         it("update : l'email d'un autre utilisateur lève UniqueConstraintError, sans rien modifier", async () => {
-            await repository.create({ name: 'Alice', email: 'alice@test.local' })
-            const bob = await repository.create({ name: 'Bob', email: 'bob@test.local' })
+            await repository.create(newUser('Alice', 'alice@test.local'))
+            const bob = await repository.create(newUser('Bob', 'bob@test.local'))
             const error = await repository.update(bob.id, { name: 'Robert', email: 'alice@test.local' }).catch((e: unknown) => e)
             expect(isUniqueConstraintError(error)).toBe(true)
             expect(await repository.findById(bob.id)).toMatchObject({ name: 'Bob', email: 'bob@test.local' })
@@ -87,7 +95,7 @@ export function describeUserRepositoryContract(label: string, getRepository: () 
         })
 
         it('delete : renvoie true puis l’utilisateur n’existe plus ; false s’il est inconnu', async () => {
-            const created = await repository.create({ name: 'Alice', email: 'alice@test.local' })
+            const created = await repository.create(newUser('Alice', 'alice@test.local'))
             expect(await repository.delete(created.id)).toBe(true)
             expect(await repository.findById(created.id)).toBeUndefined()
             expect(await repository.delete(created.id)).toBe(false)

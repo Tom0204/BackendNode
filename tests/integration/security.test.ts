@@ -9,18 +9,17 @@ import { loadFreshApp } from '../helpers/fresh-modules'
 import { expectErrorResponse, expectSuccessResponse } from '../helpers/http'
 
 // Chemin écrit en clair : les tests décrivent le contrat public de l'API.
-const USERS = '/api/v1/users'
+const REGISTER = '/api/v1/auth/register'
+// Mot de passe valide (15 caractères au moins) pour les inscriptions qui doivent aboutir.
+const PASSWORD = 'correct horse battery'
 const ALLOWED_ORIGIN = 'https://jeu.example.com'
 const OTHER_ORIGIN = 'https://autre.example.com'
 
 let app: Express
-// Utilisateur existant, pour les requêtes qui en ciblent un (DELETE).
-let existingUserId: string
 
 beforeEach(async () => {
-    const fresh = await loadFreshApp({ users: [{ name: 'Alice', email: 'alice@example.com' }] })
+    const fresh = await loadFreshApp()
     app = fresh.app
-    existingUserId = fresh.users[0]?.id ?? ''
 })
 
 describe('en-têtes de sécurité (helmet)', () => {
@@ -49,7 +48,7 @@ describe('en-têtes de sécurité (helmet)', () => {
 describe('taille maximale du corps JSON (10 Ko)', () => {
     it('corps de 11 Ko : 413 PAYLOAD_TOO_LARGE', async () => {
         const response = await request(app)
-            .post(USERS)
+            .post(REGISTER)
             .send({ name: 'a'.repeat(11 * 1024), email: 'big@example.com' })
 
         expectErrorResponse(response, 413, 'PAYLOAD_TOO_LARGE', [])
@@ -57,8 +56,8 @@ describe('taille maximale du corps JSON (10 Ko)', () => {
 
     it('corps de 9 Ko : lu et traité normalement (201)', async () => {
         const response = await request(app)
-            .post(USERS)
-            .send({ name: 'a'.repeat(9 * 1024), email: 'nine@example.com' })
+            .post(REGISTER)
+            .send({ name: 'a'.repeat(9 * 1024), email: 'nine@example.com', password: PASSWORD })
 
         expect(response.status).toBe(201)
     })
@@ -70,7 +69,7 @@ describe('format du corps : JSON uniquement (415)', () => {
         { label: 'formulaire', type: 'application/x-www-form-urlencoded', body: 'name=A&email=a%40example.com' },
         { label: 'XML', type: 'application/xml', body: '<user><name>A</name></user>' }
     ])('corps $label : 415 UNSUPPORTED_MEDIA_TYPE', async ({ type, body }) => {
-        const response = await request(app).post(USERS).set('Content-Type', type).send(body)
+        const response = await request(app).post(REGISTER).set('Content-Type', type).send(body)
 
         expectErrorResponse(response, 415, 'UNSUPPORTED_MEDIA_TYPE', [])
         expect(response.body.message).toBe('Unsupported media type')
@@ -78,27 +77,27 @@ describe('format du corps : JSON uniquement (415)', () => {
 
     it('corps sans Content-Type : 415 UNSUPPORTED_MEDIA_TYPE', async () => {
         // Un Buffer est envoyé tel quel, sans Content-Type (une chaîne recevrait un type « formulaire » par défaut).
-        const response = await request(app).post(USERS).send(Buffer.from('{"name":"A","email":"a@example.com"}'))
+        const response = await request(app).post(REGISTER).send(Buffer.from('{"name":"A","email":"a@example.com"}'))
 
         expectErrorResponse(response, 415, 'UNSUPPORTED_MEDIA_TYPE', [])
     })
 
     it('application/json; charset=utf-8 : accepté (201)', async () => {
         const response = await request(app)
-            .post(USERS)
+            .post(REGISTER)
             .set('Content-Type', 'application/json; charset=utf-8')
-            .send(JSON.stringify({ name: 'Charset', email: 'charset@example.com' }))
+            .send(JSON.stringify({ name: 'Charset', email: 'charset@example.com', password: PASSWORD }))
 
         expect(response.status).toBe(201)
     })
 
-    it('requête sans corps : non concernée (GET 200, DELETE 204)', async () => {
-        expect((await request(app).get(USERS)).status).toBe(200)
-        expect((await request(app).delete(`${USERS}/${existingUserId}`)).status).toBe(204)
+    it('requête sans corps : non concernée (GET /health 200, route inconnue de /api/v1 404, pas 415)', async () => {
+        expect((await request(app).get('/health')).status).toBe(200)
+        expect((await request(app).delete('/api/v1/inconnue')).status).toBe(404)
     })
 
     it("POST avec Content-Length: 0 et sans Content-Type : non concerné (400 de validation, pas 415)", async () => {
-        const response = await request(app).post(USERS).set('Content-Length', '0')
+        const response = await request(app).post(REGISTER).set('Content-Length', '0')
 
         expectErrorResponse(response, 400, 'VALIDATION_ERROR')
     })
@@ -116,7 +115,7 @@ describe("CORS de l'application (development et test : toutes les origines)", ()
 
     it('répond à une préflight OPTIONS (204) sans atteindre les routes', async () => {
         const response = await request(app)
-            .options(USERS)
+            .options(REGISTER)
             .set('Origin', OTHER_ORIGIN)
             .set('Access-Control-Request-Method', 'POST')
             .set('Access-Control-Request-Headers', 'Content-Type')

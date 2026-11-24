@@ -5,7 +5,7 @@ import { env } from './environment'
  * Clés masquées dans tous les logs, quel que soit l'objet journalisé (FND-05, décision D5).
  * « *.cle » couvre la clé un niveau plus bas (par exemple { user: { password } }).
  */
-const SENSITIVE_KEYS = ['authorization', 'cookie', 'set-cookie', 'password', 'token', 'accessToken', 'refreshToken', 'secret']
+const SENSITIVE_KEYS = ['authorization', 'cookie', 'set-cookie', 'password', 'passwordHash', 'token', 'accessToken', 'refreshToken', 'secret']
 
 const REDACTED_PATHS = SENSITIVE_KEYS.flatMap((key) => [`["${key}"]`, `*["${key}"]`])
 

@@ -1,9 +1,9 @@
 import express, { type Express } from 'express'
 import { API_V1_PREFIX, createApiV1Router } from './routes'
 import healthRoutes from './routes/health.routes'
-import { createUserRoutes } from './routes/user.routes'
-import { createUserController } from './controllers/user.controller'
-import type { UserService } from './services/user.service'
+import { createAuthRoutes } from './routes/auth.routes'
+import { createAuthController } from './controllers/auth.controller'
+import type { AuthService } from './services/auth.service'
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
 import { createRequestLogger } from './middlewares/request-logger.middleware'
 import { createCorsMiddleware, createSecurityHeaders, requireJsonContentType } from './middlewares/security.middleware'
@@ -17,11 +17,11 @@ import { corsAllowedOrigins, JSON_BODY_LIMIT } from './config/http'
  * avec un repository contrôlé, sans base de données.
  */
 export interface AppDependencies {
-    userService: UserService
+    authService: AuthService
 }
 
 /** Construit l'application Express. Aucune connexion n'est ouverte ici. */
-export function createApp({ userService }: AppDependencies): Express {
+export function createApp({ authService }: AppDependencies): Express {
     const app = express()
 
     // L'ordre compte (FND-08) :
@@ -40,7 +40,7 @@ export function createApp({ userService }: AppDependencies): Express {
     app.use(express.json({ limit: JSON_BODY_LIMIT }))
 
     app.use('/health', healthRoutes)
-    app.use(API_V1_PREFIX, createApiV1Router({ users: createUserRoutes(createUserController(userService)) }))
+    app.use(API_V1_PREFIX, createApiV1Router({ auth: createAuthRoutes(createAuthController(authService)) }))
 
     app.use(notFoundHandler)
     app.use(errorHandler)

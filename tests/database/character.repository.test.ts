@@ -7,7 +7,7 @@ import { createPrismaUserRepository, type UserRepository } from '../../src/repos
 import type { User } from '../../src/types/user'
 import { deleteAllPlayerData } from '../helpers/player-fixtures'
 import { requireSafeTestDatabaseUrl } from '../helpers/test-database'
-import { UNKNOWN_USER_ID } from '../helpers/user-repository-contract'
+import { newUser, UNKNOWN_USER_ID } from '../helpers/user-repository-contract'
 
 /* Repository des personnages (DB-04), sur mmorpg_test.
  * Vérifie la correspondance avec le schéma et data-model.md : normalized_name = lower(name), nom unique
@@ -31,7 +31,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
     await deleteAllPlayerData(database.prisma)
-    owner = await users.create({ name: 'Owner', email: 'owner@test.local' })
+    owner = await users.create(newUser('Owner', 'owner@test.local'))
 })
 
 afterAll(async () => {
@@ -66,7 +66,7 @@ describe('CharacterRepository.create', () => {
 
     it('refuse un nom déjà pris avec une autre casse : UniqueConstraintError("name")', async () => {
         await characters.create({ userId: owner.id, classId: warriorId, name: 'Arthas' })
-        const other = await users.create({ name: 'Other', email: 'other@test.local' })
+        const other = await users.create(newUser('Other', 'other@test.local'))
 
         const error = await characters.create({ userId: other.id, classId: mageId, name: 'ARTHAS' }).catch((e: unknown) => e)
 
@@ -94,7 +94,7 @@ describe('CharacterRepository : lectures', () => {
     })
 
     it('findAllByUserId : uniquement les personnages de cet utilisateur, triés par création puis identifiant', async () => {
-        const other = await users.create({ name: 'Other', email: 'other@test.local' })
+        const other = await users.create(newUser('Other', 'other@test.local'))
         await characters.create({ userId: owner.id, classId: warriorId, name: 'Arthas' })
         await characters.create({ userId: other.id, classId: warriorId, name: 'Thrall' })
         await characters.create({ userId: owner.id, classId: mageId, name: 'Jaina' })

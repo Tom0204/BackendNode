@@ -1,16 +1,16 @@
 import type { Express } from 'express'
 import request from 'supertest'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadFreshApp, type UserService } from '../helpers/fresh-modules'
+import { loadFreshApp, type AuthService } from '../helpers/fresh-modules'
 import { expectErrorResponse, expectSuccessResponse } from '../helpers/http'
 
 let app: Express
-let userService: UserService
+let authService: AuthService
 
 beforeEach(async () => {
     const fresh = await loadFreshApp()
     app = fresh.app
-    userService = fresh.userService
+    authService = fresh.authService
 })
 
 describe('GET /health', () => {
@@ -53,8 +53,8 @@ describe('migration des anciennes routes (FND-07)', () => {
         expectErrorResponse(await request(app).get('/users/1'), 404, 'ROUTE_NOT_FOUND', [])
     })
 
-    it("POST /users : 404 ROUTE_NOT_FOUND, sans appeler le service", async () => {
-        const createSpy = vi.spyOn(userService, 'create')
+    it("POST /users : 404 ROUTE_NOT_FOUND, sans appeler aucun service", async () => {
+        const createSpy = vi.spyOn(authService, 'register')
 
         const response = await request(app).post('/users').send({ name: 'Al', email: 'al@example.com' })
 

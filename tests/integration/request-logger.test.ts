@@ -150,7 +150,7 @@ describe("en-tête X-Request-Id sur l'application réelle", () => {
     })
 
     it('est présent sur une réponse de succès et sur une réponse d’erreur', async () => {
-        expect((await request(app).get('/api/v1/users')).headers['x-request-id']).toMatch(UUID_PATTERN)
+        expect((await request(app).get('/health')).headers['x-request-id']).toMatch(UUID_PATTERN)
         expect((await request(app).get('/inconnue')).headers['x-request-id']).toMatch(UUID_PATTERN)
     })
 

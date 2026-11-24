@@ -43,6 +43,7 @@ Les documents et le code peuvent évoluer. Toujours vérifier leur état réel a
 - tsx et nodemon pour le développement.
 - tsup pour compiler vers `dist/server.cjs` en CommonJS.
 - Pino et pino-http pour les logs.
+- argon2 (Argon2id) pour le hachage des mots de passe (AUTH-03).
 - Helmet pour les en-têtes de sécurité.
 - express-rate-limit pour la limitation du débit.
 - Vitest et Supertest pour les tests.
@@ -136,7 +137,7 @@ Tests actuels :
 - Les tests doivent couvrir les cas nominaux, erreurs, limites et non-régressions.
 - `tests/database/` pour les tests utilisant PostgreSQL : exclusivement la base `mmorpg_test`, protégée par `tests/helpers/test-database.ts`, et lancés uniquement par `npm run test:db`.
 
-Dernier état connu : **302 tests validés après DB-04** (`npm test`, sans base) et **61 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
+Dernier état connu : **316 tests validés après AUTH-01/03/04** (`npm test`, sans base) et **66 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
 
 Commandes principales :
 
@@ -170,7 +171,10 @@ Les tickets suivants sont validés :
 - DB-02 et DB-03.
 - DB-04.
 
+Réalisés, en attente de validation : AUTH-01, AUTH-03 et AUTH-04 ; AUTH-02 partiel (permissions reportées après AUTH-07 et AUTH-08).
+
 Derniers commits connus :
+- DB-04 : `037dd8e`.
 - DB-02 et DB-03 : `d6285f5`.
 - DB-01 : `f858ab4`.
 - SET-04 : `ea106ef`.
@@ -181,9 +185,9 @@ Derniers commits connus :
 FND-08 est **validé**, et non en attente de validation.
 
 État fonctionnel connu :
-- API de gestion des utilisateurs (CRUD persistant dans PostgreSQL, identifiants UUID).
+- Inscription `POST /api/v1/auth/register` (mot de passe hashé en Argon2id, rôle `PLAYER`) ; routes `/api/v1/users` retirées jusqu'aux permissions (AUTH-02).
 - PostgreSQL et Prisma configurés (DB-01) ; modèle, migration `init` et données de référence en place (DB-02, DB-03) ; repositories persistants des utilisateurs et des personnages (DB-04).
-- Pas encore d'authentification.
+- Pas encore de connexion ni d'authentification des requêtes (AUTH-05 à AUTH-07).
 - Pas encore de Front-End.
 
 Ces informations sont un point de repère, pas une preuve de l'état actuel. Vérifier Git, les fichiers, les scripts et les tests avant chaque intervention.

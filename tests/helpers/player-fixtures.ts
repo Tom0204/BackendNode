@@ -11,9 +11,12 @@ type Db = Pick<PrismaClient, 'user' | 'character' | 'characterClass' | 'zone'>
 
 let sequence = 0
 
+/** Hash fictif : ces tests portent sur le schéma, le hachage est testé par AUTH-03. */
+export const TEST_PASSWORD_HASH = 'test-password-hash'
+
 /** Crée un utilisateur avec un email unique, en minuscules. */
 export async function createTestUser(db: Db, email = `player${++sequence}@test.local`) {
-    return db.user.create({ data: { name: 'Test player', email } })
+    return db.user.create({ data: { name: 'Test player', email, passwordHash: TEST_PASSWORD_HASH } })
 }
 
 /** Crée un personnage dans la zone de départ ; la classe est désignée par son code. */

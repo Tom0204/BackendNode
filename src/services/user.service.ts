@@ -3,12 +3,14 @@ import { isUniqueConstraintError } from '../repositories/errors'
 import { conflict, notFound } from '../utils/http-error'
 import type { User, UserData } from '../types/user'
 
-// Le format des données (champs requis, chaînes non vides, champs inconnus, UUID) est validé
-// en amont par les schémas Zod des routes. Ce service applique les règles métier ;
-// il ne contient aucune requête : les accès à la base passent par le repository reçu (DB-04).
+// Règles métier de gestion des comptes existants. Ce service ne contient aucune requête :
+// les accès à la base passent par le repository reçu (DB-04).
+// Les routes /api/v1/users sont retirées jusqu'à la mise en place des permissions (AUTH-02, reporté après AUTH-07/08) :
+// ce service n'est pas exposé pour l'instant ; la création d'un compte passe par l'inscription (auth.service.ts, AUTH-04).
 
 const userNotFound = () => notFound('USER_NOT_FOUND', 'User not found')
-const emailTaken = () => conflict('EMAIL_ALREADY_USED', 'Email already taken')
+/** Erreur 409 d'un email déjà utilisé, commune à l'inscription et à la modification d'un compte. */
+export const emailTaken = () => conflict('EMAIL_ALREADY_USED', 'Email already taken')
 
 /** Email enregistré en minuscules : deux emails qui ne diffèrent que par la casse désignent le même compte. */
 export function normalizeEmail(email: string): string {
@@ -51,14 +53,6 @@ export function createUserService(repository: UserRepository) {
         getAll: (): Promise<User[]> => repository.findAll(),
 
         getById,
-
-        async create(input: UserData): Promise<User> {
-            try {
-                return await repository.create({ name: input.name, email: normalizeEmail(input.email) })
-            } catch (error) {
-                return translateRepositoryError(error)
-            }
-        },
 
         replace: (id: string, input: UserData): Promise<User> =>
             update(id, { name: input.name, email: normalizeEmail(input.email) }),
