@@ -99,7 +99,14 @@ const envSchema = z
             .default(4001),
         LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
         CORS_ORIGINS: corsOriginsSchema,
-        DATABASE_URL: databaseUrlSchema
+        DATABASE_URL: databaseUrlSchema,
+        // Durée de vie absolue d'une session de connexion, en heures (AUTH-05) : 24 par défaut, 30 jours au plus.
+        SESSION_TTL_HOURS: z.coerce
+            .number()
+            .int('doit être un entier')
+            .min(1, 'doit être au moins 1')
+            .max(720, 'doit être au plus 720 (30 jours)')
+            .default(24)
     })
     .superRefine((env, ctx) => {
         if (env.NODE_ENV !== 'test' && env.DATABASE_URL === undefined) {

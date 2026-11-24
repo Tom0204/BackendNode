@@ -37,7 +37,7 @@ export function describeUserRepositoryContract(label: string, getRepository: () 
             expect(user.id).toMatch(UUID_PATTERN)
             expect(user.createdAt).toBeInstanceOf(Date)
             expect(user.updatedAt).toBeInstanceOf(Date)
-            expect(Object.keys(user).sort()).toEqual(['createdAt', 'email', 'id', 'name', 'role', 'updatedAt'])
+            expect(Object.keys(user).sort()).toEqual(['createdAt', 'email', 'id', 'name', 'role', 'status', 'updatedAt'])
             expect(JSON.stringify(await repository.findAll())).not.toContain(CONTRACT_PASSWORD_HASH)
         })
 
@@ -92,6 +92,44 @@ export function describeUserRepositoryContract(label: string, getRepository: () 
 
         it('update : renvoie undefined pour un utilisateur inconnu', async () => {
             expect(await repository.update(UNKNOWN_USER_ID, { name: 'X' })).toBeUndefined()
+        })
+
+        it('create : statut ACTIVE par défaut', async () => {
+            expect(await repository.create(newUser('Alice', 'alice@test.local'))).toMatchObject({ status: 'ACTIVE' })
+        })
+
+        it('findByEmail : renvoie le compte, ou undefined', async () => {
+            const created = await repository.create(newUser('Alice', 'alice@test.local'))
+            expect(await repository.findByEmail('alice@test.local')).toEqual(created)
+            expect(await repository.findByEmail('inconnu@test.local')).toBeUndefined()
+        })
+
+        it('findCredentialsByEmail : renvoie le compte et son hash, ou undefined', async () => {
+            const created = await repository.create(newUser('Alice', 'alice@test.local'))
+            expect(await repository.findCredentialsByEmail('alice@test.local')).toEqual({
+                user: created,
+                passwordHash: CONTRACT_PASSWORD_HASH
+            })
+            expect(await repository.findCredentialsByEmail('inconnu@test.local')).toBeUndefined()
+        })
+
+        it('findPage : page demandée dans l’ordre de findAll, avec le nombre total', async () => {
+            for (const name of ['Un', 'Deux', 'Trois', 'Quatre', 'Cinq']) {
+                await repository.create(newUser(name, `${name.toLowerCase()}@test.local`))
+            }
+            const all = await repository.findAll()
+            expect(await repository.findPage({ skip: 0, take: 2 })).toEqual({ users: all.slice(0, 2), totalItems: 5 })
+            expect(await repository.findPage({ skip: 4, take: 2 })).toEqual({ users: all.slice(4), totalItems: 5 })
+            expect(await repository.findPage({ skip: 10, take: 2 })).toEqual({ users: [], totalItems: 5 })
+        })
+
+        it('setRole et setStatus : modifient le compte, undefined pour un compte inconnu', async () => {
+            const created = await repository.create(newUser('Alice', 'alice@test.local'))
+            expect(await repository.setRole(created.id, 'ADMIN')).toMatchObject({ id: created.id, role: 'ADMIN', status: 'ACTIVE' })
+            expect(await repository.setStatus(created.id, 'DISABLED')).toMatchObject({ role: 'ADMIN', status: 'DISABLED' })
+            expect(await repository.findById(created.id)).toMatchObject({ role: 'ADMIN', status: 'DISABLED' })
+            expect(await repository.setRole(UNKNOWN_USER_ID, 'ADMIN')).toBeUndefined()
+            expect(await repository.setStatus(UNKNOWN_USER_ID, 'DISABLED')).toBeUndefined()
         })
 
         it('delete : renvoie true puis l’utilisateur n’existe plus ; false s’il est inconnu', async () => {

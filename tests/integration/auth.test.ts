@@ -4,13 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadFreshApp, type FreshApp } from '../helpers/fresh-modules'
 import { expectErrorResponse, expectSuccessResponse } from '../helpers/http'
 
-/* POST /api/v1/auth/register (AUTH-04) et retrait des routes /api/v1/users (AUTH-02, permissions reportées).
+/* POST /api/v1/auth/register (AUTH-04). Connexion et déconnexion : tests/integration/login.test.ts.
  * Application réelle, repository en mémoire et hachage rapide : aucune base de données.
  */
 
 // Chemins écrits en clair : les tests décrivent le contrat public de l'API.
 const REGISTER = '/api/v1/auth/register'
-const USERS = '/api/v1/users'
 const PASSWORD = 'correct horse battery staple'
 const SOME_UUID = '0193a5f4-2b3c-7d4e-9f50-617283940a1b'
 
@@ -145,23 +144,7 @@ describe('POST /api/v1/auth/register : email déjà utilisé (409)', () => {
     })
 })
 
-describe('routes /api/v1/users retirées (AUTH-02 : permissions reportées après AUTH-07 et AUTH-08)', () => {
-    it.each([
-        { method: 'get', path: USERS },
-        { method: 'post', path: USERS },
-        { method: 'get', path: `${USERS}/${SOME_UUID}` },
-        { method: 'put', path: `${USERS}/${SOME_UUID}` },
-        { method: 'patch', path: `${USERS}/${SOME_UUID}` },
-        { method: 'delete', path: `${USERS}/${SOME_UUID}` }
-    ] as const)('$method $path : 404 ROUTE_NOT_FOUND', async ({ method, path }) => {
-        expectErrorResponse(await request(app)[method](path), 404, 'ROUTE_NOT_FOUND', [])
-    })
-
-    it("POST /api/v1/users ne crée aucun compte, même avec un corps complet", async () => {
-        await request(app).post(USERS).send({ name: 'Alice', email: 'alice@example.com', password: PASSWORD })
-        expect(await fresh.userRepository.findAll()).toEqual([])
-    })
-
+describe('autres méthodes', () => {
     it('GET /api/v1/auth/register : 404 (seul POST est prévu)', async () => {
         expectErrorResponse(await request(app).get(REGISTER), 404, 'ROUTE_NOT_FOUND', [])
     })

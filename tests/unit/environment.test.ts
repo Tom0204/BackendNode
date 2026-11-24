@@ -10,7 +10,7 @@ afterEach(() => {
 // DATABASE_URL est obligatoire hors test (DB-01) : chaque source la fournit, sauf dans les tests qui portent sur elle.
 const DATABASE_URL = 'postgresql://mmorpg:motdepasse@localhost:5432/mmorpg_dev'
 const REQUIRED_ENV = { DATABASE_URL }
-const DEFAULT_ENV = { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: 'info', DATABASE_URL }
+const DEFAULT_ENV = { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: 'info', DATABASE_URL, SESSION_TTL_HOURS: 24 }
 
 describe('parseEnvironment', () => {
     it("applique les valeurs par défaut quand aucune variable n'est définie", () => {
@@ -20,7 +20,7 @@ describe('parseEnvironment', () => {
     it('convertit PORT en nombre et accepte un NODE_ENV valide', () => {
         expect(parseEnvironment({ ...REQUIRED_ENV, NODE_ENV: 'production', PORT: '4002' })).toEqual({
             success: true,
-            env: { NODE_ENV: 'production', PORT: 4002, LOG_LEVEL: 'info', DATABASE_URL }
+            env: { NODE_ENV: 'production', PORT: 4002, LOG_LEVEL: 'info', DATABASE_URL, SESSION_TTL_HOURS: 24 }
         })
     })
 
@@ -28,7 +28,7 @@ describe('parseEnvironment', () => {
     it.each(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])('accepte LOG_LEVEL=%s', (level) => {
         expect(parseEnvironment({ ...REQUIRED_ENV, LOG_LEVEL: level })).toEqual({
             success: true,
-            env: { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: level, DATABASE_URL }
+            env: { NODE_ENV: 'development', PORT: 4001, LOG_LEVEL: level, DATABASE_URL, SESSION_TTL_HOURS: 24 }
         })
     })
 
@@ -170,7 +170,7 @@ describe('parseEnvironment : DATABASE_URL (DB-01)', () => {
     it('est facultative en test (les tests unitaires et HTTP n\'utilisent aucune base)', () => {
         expect(parseEnvironment({ NODE_ENV: 'test' })).toEqual({
             success: true,
-            env: { NODE_ENV: 'test', PORT: 4001, LOG_LEVEL: 'info' }
+            env: { NODE_ENV: 'test', PORT: 4001, LOG_LEVEL: 'info', SESSION_TTL_HOURS: 24 }
         })
     })
 
@@ -198,5 +198,21 @@ describe('parseEnvironment : DATABASE_URL (DB-01)', () => {
         if (!result.success) {
             expect(result.problems.join('\n')).not.toContain('secret')
         }
+    })
+})
+
+describe('parseEnvironment : SESSION_TTL_HOURS (AUTH-05)', () => {
+    it('24 heures par défaut ; une valeur entière de 1 à 720 est acceptée', () => {
+        expect(parseEnvironment({ ...REQUIRED_ENV })).toMatchObject({ success: true, env: { SESSION_TTL_HOURS: 24 } })
+        expect(parseEnvironment({ ...REQUIRED_ENV, SESSION_TTL_HOURS: '1' })).toMatchObject({ env: { SESSION_TTL_HOURS: 1 } })
+        expect(parseEnvironment({ ...REQUIRED_ENV, SESSION_TTL_HOURS: '720' })).toMatchObject({ env: { SESSION_TTL_HOURS: 720 } })
+    })
+
+    it.each([
+        { value: '0', problem: 'SESSION_TTL_HOURS : doit être au moins 1' },
+        { value: '721', problem: 'SESSION_TTL_HOURS : doit être au plus 720 (30 jours)' },
+        { value: '1.5', problem: 'SESSION_TTL_HOURS : doit être un entier' }
+    ])('refuse $value', ({ value, problem }) => {
+        expect(parseEnvironment({ ...REQUIRED_ENV, SESSION_TTL_HOURS: value })).toEqual({ success: false, problems: [problem] })
     })
 })

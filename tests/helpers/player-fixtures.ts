@@ -1,5 +1,6 @@
 import type { PrismaClient } from '../../src/generated/prisma/client'
 import { STARTING_ZONE_CODE } from '../../prisma/seed/reference-data'
+import { TEST_DATABASE_NAME } from './test-database'
 
 /* Données de joueurs pour les tests base de données (DB-03).
  * Séparées des données de référence (prisma/seed) : elles sont créées par les tests eux-mêmes
@@ -41,8 +42,28 @@ export async function createTestCharacter(
     })
 }
 
-/** Supprime toutes les données de joueurs ; les données de référence restent en place. */
-export async function deleteAllPlayerData(db: Db): Promise<void> {
+/** Client capable de nettoyer les données de joueurs (vérification de la base, puis suppressions). */
+type CleanupDb = Pick<PrismaClient, '$queryRaw' | 'character' | 'user'>
+
+/**
+ * Vérifie, auprès du serveur lui-même, que la connexion vise bien mmorpg_test.
+ * Seconde barrière après requireSafeTestDatabaseUrl (qui contrôle l'URL) : même si une URL mal configurée
+ * ou un alias côté serveur menait ailleurs, aucune donnée d'une autre base ne serait supprimée.
+ */
+export async function assertConnectedToTestDatabase(db: Pick<PrismaClient, '$queryRaw'>): Promise<void> {
+    const rows = await db.$queryRaw<Array<{ name: string }>>`SELECT current_database() AS name`
+    const name = rows[0]?.name
+    if (name !== TEST_DATABASE_NAME) {
+        throw new Error(`Nettoyage refusé : la connexion vise la base « ${name ?? 'inconnue'} », pas ${TEST_DATABASE_NAME}.`)
+    }
+}
+
+/**
+ * Supprime toutes les données de joueurs (comptes, puis par cascade personnages et sessions) ;
+ * les données de référence restent en place. Refuse d'agir sur une autre base que mmorpg_test.
+ */
+export async function deleteAllPlayerData(db: CleanupDb): Promise<void> {
+    await assertConnectedToTestDatabase(db)
     await db.character.deleteMany()
     await db.user.deleteMany()
 }

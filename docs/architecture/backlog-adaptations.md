@@ -28,10 +28,16 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du d�
 | DB-02 | Réalisé (voir `docs/architecture/data-model.md`) | `d6285f5` |
 | DB-03 | Réalisé (migration `init`, seed des données de référence) | `d6285f5` |
 | DB-04 | Validé (repositories persistants) | `037dd8e` |
-| AUTH-01 | Réalisé (hash du mot de passe et rôle ; statut de compte reporté à AUTH-06) | — |
-| AUTH-02 | **Partiel** : routes `/users` supprimées, DTO public ; permissions reportées après AUTH-07 et AUTH-08 | — |
-| AUTH-03 | Réalisé (Argon2id) | — |
-| AUTH-04 | Réalisé (`POST /api/v1/auth/register`) | — |
+| AUTH-01 | Validé (hash du mot de passe et rôle) | `4e37896` |
+| AUTH-03 | Validé (Argon2id) | `4e37896` |
+| AUTH-04 | Validé (`POST /api/v1/auth/register`) | `4e37896` |
+| AUTH-05 | Validé (sessions opaques en PostgreSQL) | Lot L2 (hash à reporter au lot suivant) |
+| AUTH-06 | Validé (`POST /api/v1/auth/login`, statut des comptes) | Lot L2 |
+| AUTH-07 | Validé (`requireAuth`, contexte typé) | Lot L2 |
+| AUTH-08 | Validé (rôle `ADMIN`, `requireRole`, règles de propriété dans les services) | Lot L2 |
+| AUTH-02 | Validé (routes `/users` réintroduites avec permissions ; partiel en `4e37896`) | Lot L2 |
+| AUTH-09 | Validé (`/users/me`) | Lot L2 |
+| AUTH-10 | Validé (`POST /api/v1/auth/logout`) | Lot L2 |
 
 ## Ordre de réalisation
 
@@ -55,7 +61,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 |---|---|---|---|
 | FND-01 | Le point « Centraliser la lecture du port et des variables d'environnement » est réalisé dans FND-02. | Même livrable que le module de configuration de FND-02. | FND-02 |
 | FND-01 | Le point « Gérer proprement les erreurs de démarrage » est sorti de FND-01. | Non couvert ailleurs dans le backlog. | FND-09 (proposé) |
-| FND-02 | `DATABASE_URL` et les secrets d'authentification ne sont pas rendus obligatoires. | La base de données (SET-04) et la stratégie d'authentification (AUTH-05) ne sont pas décidées. Les rendre obligatoires bloquerait le démarrage pour des variables inutilisées. | À ajouter dans DB-01 (`DATABASE_URL`) et AUTH-05 (secrets) |
+| FND-02 | `DATABASE_URL` et les secrets d'authentification ne sont pas rendus obligatoires. | La base de données (SET-04) et la stratégie d'authentification (AUTH-05) ne sont pas décidées. Les rendre obligatoires bloquerait le démarrage pour des variables inutilisées. | À ajouter dans DB-01 (`DATABASE_URL`) et AUTH-05 (secrets). **Traité :** `DATABASE_URL` en DB-01 ; aucun secret d'authentification n'est nécessaire avec les sessions opaques (lot L2) |
 | FND-02 | Le fichier `.env` est chargé avec `process.loadEnvFile()` natif de Node, sans `dotenv`. | Éviter une dépendance supplémentaire. Node ≥ 20.12 requis (version du projet : 22.23.2). | — |
 | FND-02 | Aucun test automatisé ni requête Postman. | Le framework de test n'existe pas encore (FND-06) et aucun endpoint n'est modifié. Vérification manuelle. | Tests de configuration à ajouter avec FND-06 |
 | SET-01 | Le livrable `docs/architecture/current-state.md` est rédigé dans le cadre de SET-05 ; il décrit l'état au commit `818a426`. | L'audit avait d'abord été rendu dans la conversation, sans document dans le dépôt. | — |
@@ -99,7 +105,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | FND-05 | Variable `LOG_LEVEL` ajoutée à la configuration de FND-02 (`fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`, défaut `info`). | Réglage du niveau de log ; une valeur invalide empêche le démarrage, comme les autres variables. | — |
 | FND-05 | Les erreurs de configuration restent affichées avec `console.error`. | Le logger dépend de la configuration validée : il n'existe pas encore quand elle est invalide. | — |
 | FND-05 | Identifiant de requête exposé uniquement par l'en-tête `X-Request-Id`, pas dans le corps des réponses. | Ne pas modifier le format des réponses défini par SET-05 ; ajout compatible (conventions §13), documenté en conventions §2.1. | — |
-| FND-05 | Logs de requête limités à la méthode, au chemin **sans paramètres de requête**, au statut, à la durée et à `reqId` ; ni en-têtes ni corps. | Lisibilité et absence de fuite de données sensibles (précision du propriétaire sur la décision D5). | AUTH-05 : interdire les secrets dans les chemins |
+| FND-05 | Logs de requête limités à la méthode, au chemin **sans paramètres de requête**, au statut, à la durée et à `reqId` ; ni en-têtes ni corps. | Lisibilité et absence de fuite de données sensibles (précision du propriétaire sur la décision D5). | AUTH-05 : interdire les secrets dans les chemins. **Traité (lot L2) :** jeton accepté uniquement dans l'en-tête `Authorization` |
 | FND-05 | `GET /health` journalisé au niveau `debug`, donc masqué au niveau par défaut `info`. | Décision prise à la reprise (point laissé ouvert par FND-07) : éviter le bruit des outils de surveillance, tout en gardant la possibilité de voir ces appels avec `LOG_LEVEL=debug`. | — |
 | FND-05 | Erreurs fatales du processus (`uncaughtException`, `unhandledRejection`) : log `fatal`, écriture des logs (délai de sécurité d'une seconde), puis arrêt immédiat avec le code 1. | Décision D6 ; l'arrêt propre (fermeture des connexions, signaux) relève de QUAL-06. | QUAL-06 |
 | FND-05 | Erreurs de démarrage de FND-09 journalisées en `fatal` (titre, port, code, lignes de cause et de solution), sans trace d'appels ; `describeStartupError` et `startServer` inchangés ; seul `systemErrorCode` est exporté de `src/startup.ts`. | Reprise prévue par FND-09 ; inscrire le code d'erreur dans le log sans dupliquer sa lecture. | — |
@@ -119,7 +125,7 @@ L'ordre de la phase A du backlog (`SET-01 → SET-05 → FND-01 à FND-08`) a é
 | FND-08 | Messages internes de `express-rate-limit` écrits dans les logs Pino (option `logger` de la bibliothèque, adaptateur `createRateLimitLogger`) au lieu de la console (écart E5). | Messages rattachés aux logs de l'application ; aucune modification globale de `console`. | — |
 | FND-08 | Production sans `CORS_ORIGINS` : aucune origine autorisée et avertissement au démarrage, sans refus de démarrer. | Décision D4 : un déploiement où l'API n'est appelée que depuis la même origine, derrière un proxy, doit rester possible. | — |
 | FND-08 | `trust proxy` non configuré : un en-tête `X-Forwarded-For` est ignoré, et signalé dans les logs seulement s'il est présent sur la première requête traitée par un limiteur (contrôle unique de la bibliothèque). | La configuration du reverse proxy relève de QUAL-06. | QUAL-06 |
-| FND-08 | CORS sans cookies (`credentials` non activé) ; pas de `maxAge` pour les préflights ; `helmet` avec sa configuration par défaut. | La gestion des cookies dépend de la stratégie d'authentification ; les réglages fins ne sont pas demandés par le ticket. | AUTH-05 (cookies) |
+| FND-08 | CORS sans cookies (`credentials` non activé) ; pas de `maxAge` pour les préflights ; `helmet` avec sa configuration par défaut. | La gestion des cookies dépend de la stratégie d'authentification ; les réglages fins ne sont pas demandés par le ticket. | AUTH-05 (cookies). **Traité (lot L2) :** aucun cookie, jeton `Bearer` ; CORS inchangé |
 | FND-08 | Comportement de production vérifié dans de petites applications de test (vrai middleware, politique CORS donnée) et manuellement, sans charger l'application avec `NODE_ENV=production`. | En production, le fichier `.env` local serait lu et pourrait influencer les tests. | — |
 | FND-08 | Pas de requêtes Postman. | Aucun endpoint n'est ajouté ; seuls des en-têtes et les statuts 413, 415 et 429 apparaissent. | DOC-01 (prévoir le cas 415 avec un corps « Text » et le cas 429) |
 
@@ -465,7 +471,7 @@ Contrôles effectués lors de la réalisation :
 
 ### Points à reprendre
 
-- **AUTH-05 :** interdire les secrets dans les chemins et les paramètres de requête (le chemin est journalisé).
+- **AUTH-05 :** interdire les secrets dans les chemins et les paramètres de requête (le chemin est journalisé). *Traité (lot L2) : le jeton n'est lu que dans l'en-tête `Authorization`.*
 - **QUAL-06 :** arrêt propre (signaux, fermeture des connexions) ; rappeler que `NODE_ENV=production` est obligatoire sans dépendances de développement.
 - **Documentation d'installation (README) :** décrire `LOG_LEVEL` et l'en-tête `X-Request-Id`.
 
@@ -539,7 +545,7 @@ Contrôles effectués lors de la réalisation :
 
 - **QUAL-02 :** brancher `createStrictRateLimiter()` sur la connexion et l'inscription ; rendre les limites configurables par environnement ; stockage partagé si plusieurs instances.
 - **QUAL-06 :** configurer `trust proxy` derrière un reverse proxy, pour que le rate limiting utilise l'adresse IP réelle du client ; HTTPS (l'en-tête `Strict-Transport-Security` n'a d'effet qu'en HTTPS).
-- **AUTH-05 :** décider des cookies et, le cas échéant, activer `credentials` dans CORS avec une liste d'origines obligatoire.
+- **AUTH-05 :** décider des cookies et, le cas échéant, activer `credentials` dans CORS avec une liste d'origines obligatoire. *Traité (lot L2) : pas de cookie, `credentials` reste désactivé.*
 - **DOC-01 :** requêtes Postman pour les cas 413, 415 et 429.
 - **Documentation d'installation (README) :** décrire `CORS_ORIGINS`, en plus de `LOG_LEVEL` et de l'en-tête `X-Request-Id` (point de FND-05).
 
@@ -569,7 +575,7 @@ Parcours du MVP : `docs/gameplay/mvp-scope.md`. Règles chiffrées : `docs/gamep
 | SET-02, SET-03 | Aucun test automatisé ni requête Postman | Tickets de documentation, sans modification du code |
 | CHAR-01 | `GET /classes` (et le détail d'une classe) est **public** : pas d'authentification, pas de dépendance à AUTH-07 (décision du 2026-11-22) | Donnée de référence sans propriétaire ; cohérent avec les dépendances et critères de CHAR-01 |
 | SET-03 (G2) | Statistique de critique retirée du MVP le 2026-11-23, à la validation de DB-02 : supprimée de `rules.md` et du modèle, reportée à COMBAT-05 | Le MVP ne prévoit pas de coups critiques ; une statistique inutilisée aurait été stockée sans règle |
-| AUTH-07 | **Point à traiter :** clarifier dans `docs/api/conventions.md` la distinction entre routes publiques et routes protégées, et préciser la portée de la phrase de la section 7 (« chaque accès vérifie […] l'authentification »), qui vise les ressources propres aux joueurs | La convention actuelle ne liste pas les routes publiques |
+| AUTH-07 | **Traité (lot L2)** : routes publiques et protégées listées dans `docs/api/conventions.md` (sections 1.5 et 7) | La convention ne listait pas les routes publiques |
 
 ## Initialisation de la base (DB-01)
 
@@ -796,6 +802,102 @@ Lot L1 de l'EPIC 03. Un compte se crée uniquement par `POST /api/v1/auth/regist
   - build OK ;
   - aucune référence à Prisma ni à `argon2` dans les services (hors `password-hasher.ts`), les controllers ou les routes.
 - Vérification manuelle du serveur compilé (`node dist/server.cjs`, port 3999, base `mmorpg_test`) : `/health` 200 ; inscription 201 avec `{ id, name, email, role }` ; 409 pour le même email dans une autre casse ; 400 pour un mot de passe trop court ; `/api/v1/users` 404 ; hash `$argon2id$v=19$m=19456,t=2,p=1$` en base ; aucun mot de passe ni hash dans les logs.
+
+## Authentification et permissions (lot L2 : AUTH-02, AUTH-05 à AUTH-10)
+
+Ordre de réalisation : AUTH-05 → AUTH-06 → AUTH-07 → AUTH-08 → AUTH-02 → AUTH-09 → AUTH-10. Ce lot termine AUTH-02, laissé partiel par le lot L1.
+
+### Décisions validées
+
+| # | Décision |
+|---|---|
+| D1 | **Sessions opaques en PostgreSQL** (AUTH-05) : jeton aléatoire de 256 bits, seule son empreinte SHA-256 est stockée. Révocation réelle, désactivation immédiate, aucun secret à gérer, aucune dépendance. Coût : une lecture en base par requête protégée |
+| D2 | Jeton transmis par `Authorization: Bearer`. Pas de cookie, donc pas de CSRF ; CORS inchangé |
+| D3 | Durée de vie absolue de 24 heures, sans prolongation, configurable (`SESSION_TTL_HOURS`, de 1 à 720) |
+| D4 | Compte désactivé : 403 `ACCOUNT_DISABLED` seulement si le mot de passe est correct, sinon 401 générique ; ses sessions sont refusées (401) |
+| D5 | Réponse de connexion : `{ accessToken, tokenType, expiresAt, user }`, avec `Cache-Control: no-store`. Email inconnu : vérification sur un hash fictif, pour une durée de réponse comparable |
+| D6 | Limiteur strict existant (10 requêtes par 15 minutes et par adresse IP) sur la connexion seulement. Inscription et réglages par environnement : QUAL-02 |
+| D7 | Routes `/users` sans POST ni PUT. `GET /users` réservée aux administrateurs et paginée (section 9 des conventions). `GET`, `PATCH`, `DELETE /users/:id` réservées au propriétaire ou à un administrateur. `GET` et `PATCH /users/me` |
+| D8 | Script local `npm run account -- promote|demote|disable|enable <email>`. Aucune route d'API pour le rôle ou le statut ; jamais de création de compte |
+| D9 | Déconnexion de la session courante uniquement |
+| D10 | Sessions expirées conservées et refusées à la lecture ; nettoyage reporté |
+
+Précisions du propriétaire :
+- **Suppression d'un compte :** un joueur ne supprime que son propre compte, un administrateur peut supprimer tout compte. Le refus a lieu avant tout accès à la base. La suppression est une seule instruction `DELETE`, avec suppression en cascade des personnages et des sessions : tout ou rien.
+- **Modification sans mot de passe actuel** (AUTH-09) : c'est une limite documentée. Le changement de mot de passe est hors périmètre.
+- **Script :** il est testé (sans base et sur PostgreSQL), documenté, ne crée jamais de compte et signale une adresse inconnue (code de sortie 1).
+- **Déconnexion :** un test vérifie qu'elle ne révoque que la session utilisée, et pas les autres sessions du compte.
+
+### Adaptations
+
+| Élément | Adaptation | Raison | Reprise |
+|---|---|---|---|
+| Ordre des tickets | AUTH-02 réalisé après AUTH-07 et AUTH-08 | Ses tests de permissions supposent l'authentification et les rôles | — |
+| Permissions | Vérifiées **dans les services** (`access-policy.ts`) ; `requireRole` n'est qu'une première barrière | Une route mal protégée ne suffit pas à ouvrir un accès ; un autre transport appliquera les mêmes règles | QUAL-01 |
+| Compte d'un autre joueur | 404 `USER_NOT_FOUND`, identique à un compte inexistant, sans lecture ni écriture | Précision de SET-05 (anti-énumération) | — |
+| `/users/*` sans jeton | 401 pour tout chemin sous `/users`, y compris les méthodes absentes (POST, PUT) ; avec un jeton : 404 | `requireAuth` est appliqué au routeur entier | — |
+| `DELETE /users/me` | N'existe pas : « me » est lu comme un identifiant et refusé (400) | Non demandé ; la suppression de son compte passe par `DELETE /users/:id` | — |
+| Contexte typé | `req.auth` (déclaration dans `src/types/express.d.ts`), lu par `getAuth()` ; les services reçoivent un `AuthContext` sans dépendance à Express | Critère d'AUTH-07 ; réutilisation par WebSocket | — |
+| `WWW-Authenticate` | Envoyé avec chaque 401 d'une route protégée (`Bearer realm="api"`) | RFC 6750 | — |
+| Mot de passe à la connexion | Pas de longueur minimale (seulement 1 à 128 caractères) | La règle d'inscription peut évoluer sans bloquer les comptes existants ; le maximum borne le coût d'Argon2id | — |
+| `src/schemas/common.schema.ts` | `nonEmptyString`, `emailSchema`, `characterCount` partagés par `auth` et `user` | Éviter la duplication | — |
+| `token_hash` | `CHECK` `^[0-9a-f]{64}$` ajouté à la main dans la migration | Garantit en base qu'aucun jeton en clair n'est stocké | — |
+| `needsRehash` (Argon2) | Non implémenté | Paramètres inchangés depuis AUTH-03 | À décider si les paramètres changent |
+| Postman | Aucune requête ajoutée | Collections prévues par DOC-01 | DOC-01 |
+
+### Fichiers créés ou modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `prisma/schema.prisma`, `prisma/migrations/20261124090906_auth_sessions/` | `ADMIN`, `user_status`, table `sessions`, `CHECK` sur l'empreinte |
+| `src/types/auth.ts`, `src/types/express.d.ts`, `src/types/user.ts` | Contexte d'authentification, sessions, statut, rôles |
+| `src/repositories/session.repository.ts`, `src/repositories/user.repository.ts` | Sessions ; lecture du hash pour la connexion, page, recherche par email, rôle, statut |
+| `src/services/session-token.ts`, `src/services/auth.service.ts`, `src/services/access-policy.ts`, `src/services/user.service.ts` | Jetons, connexion, authentification, déconnexion, permissions |
+| `src/middlewares/auth.middleware.ts` | `createRequireAuth`, `requireRole`, `getAuth` |
+| `src/schemas/common.schema.ts`, `src/schemas/auth.schema.ts`, `src/schemas/user.schema.ts` | Connexion, identifiant, PATCH strict, pagination |
+| `src/controllers/auth.controller.ts`, `src/controllers/user.controller.ts`, `src/routes/auth.routes.ts`, `src/routes/user.routes.ts`, `src/routes/index.ts`, `src/app.ts`, `server.ts` | Routes, assemblage |
+| `src/config/auth.ts`, `src/config/environment.ts`, `.env.example` | `SESSION_TTL_HOURS`, constantes |
+| `src/cli/account-command.ts`, `src/cli/account.ts`, `package.json` | Script `npm run account` |
+
+### Corrections de la relecture finale
+
+| Problème | Correction |
+|---|---|
+| Nettoyage des tests base de données protégé seulement par le contrôle de l'URL | Seconde barrière : `deleteAllPlayerData` interroge le serveur (`SELECT current_database()`) et refuse toute base autre que `mmorpg_test`, avant toute suppression. Testé sans base (`tests/unit/test-database-cleanup.test.ts`) |
+| Sections de ce document et de `data-model.md` recopiées par erreur lors de leur mise à jour (séquence `$` interprétée par `String.replace`) | Copies retirées après vérification qu'elles étaient identiques au début des fichiers ; les scripts de mise à jour remplacent désormais par fonction |
+
+Vérifié aussi : une erreur PostgreSQL inattendue (contrainte refusée) ne recopie pas les valeurs de la ligne : les logs d'une erreur 500 ne contiennent ni hash ni empreinte. Limite connue : la toute première connexion avec un email inconnu calcule en plus le hash fictif (une seule fois par démarrage).
+
+### Tests : 441 sans base (`npm test`), 94 avec base (`npm run test:db`)
+
+- **Sans base :**
+  - jetons : format, unicité, empreinte ;
+  - contrat du repository de sessions (sur le repository en mémoire) ;
+  - service d'authentification :
+    - connexion : succès, email inconnu et mauvais mot de passe avec la même réponse et la même vérification ;
+    - compte désactivé : 403 avec le bon mot de passe, 401 sinon ;
+    - expiration testée avec une horloge contrôlée, sans attente ;
+    - session révoquée, compte désactivé ou supprimé ;
+    - déconnexion de la seule session utilisée ;
+  - service utilisateur : matrice propriétaire / autre joueur / administrateur, sans lecture ni écriture en cas de refus ;
+  - middlewares ;
+  - script (actions, normalisation, adresse inconnue, erreurs d'usage) ;
+  - `SESSION_TTL_HOURS` ;
+  - API :
+    - connexion : 200, 401, 403, 400, 429 à la 11ᵉ tentative ;
+    - 401 sur 7 formes d'en-tête invalides ;
+    - matrice des permissions sur chaque route `/users`, pagination, champs interdits, `/me` ;
+    - déconnexion d'une seule session.
+- **Avec base :**
+  - contrat du repository de sessions ;
+  - contraintes de la migration (rôles, statut, format et unicité de l'empreinte) ;
+  - suppression en cascade des sessions et des personnages ;
+  - parcours complet avec Argon2id réel :
+    - empreinte SHA-256 en base et session qui survit à un redémarrage ;
+    - déconnexion d'une seule session ;
+    - promotion et désactivation par le script (Prisma), adresse inconnue sans création ;
+    - un joueur qui vise un autre compte : 404 sans aucune suppression ;
+    - suppression par un administrateur et par le propriétaire, avec cascade vérifiée.
 
 ## Décisions de fonctionnement
 

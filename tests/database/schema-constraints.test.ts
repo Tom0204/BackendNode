@@ -82,9 +82,21 @@ describe('users', () => {
         expect(violation.message).toContain('password_hash')
     })
 
-    it('refuse un rôle hors de l’énumération user_role', async () => {
+    it('accepte les rôles PLAYER et ADMIN (AUTH-08), refuse toute autre valeur de user_role', async () => {
+        const user = await createTestUser(database.prisma)
+        expect(await database.prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } })).toMatchObject({ role: 'ADMIN' })
         const violation = await violationOf(
-            (tx) => tx.$executeRaw`INSERT INTO users (name, email, password_hash, role, updated_at) VALUES ('Admin', 'admin@test.local', 'hash', 'ADMIN', now())`
+            (tx) => tx.$executeRaw`INSERT INTO users (name, email, password_hash, role, updated_at) VALUES ('X', 'x@test.local', 'hash', 'SUPERADMIN', now())`
+        )
+        expect(violation).toMatchObject({ sqlState: INVALID_TEXT_REPRESENTATION })
+    })
+
+    it('statut ACTIVE par défaut ; DISABLED accepté, toute autre valeur de user_status refusée (AUTH-06)', async () => {
+        const user = await createTestUser(database.prisma)
+        expect(user).toMatchObject({ status: 'ACTIVE' })
+        expect(await database.prisma.user.update({ where: { id: user.id }, data: { status: 'DISABLED' } })).toMatchObject({ status: 'DISABLED' })
+        const violation = await violationOf(
+            (tx) => tx.$executeRaw`INSERT INTO users (name, email, password_hash, status, updated_at) VALUES ('X', 'x@test.local', 'hash', 'BANNED', now())`
         )
         expect(violation).toMatchObject({ sqlState: INVALID_TEXT_REPRESENTATION })
     })
@@ -94,6 +106,51 @@ describe('users', () => {
         const violation = await violationOf((tx) => createTestUser(tx, 'same@test.local'))
         expect(violation).toMatchObject({ sqlState: UNIQUE_VIOLATION })
         expect(violation.message).toContain('users_email_key')
+    })
+})
+
+describe('sessions (AUTH-05)', () => {
+    const HASH = 'a'.repeat(64)
+    const inOneHour = () => new Date(Date.now() + 60 * 60 * 1000)
+
+    it('génère un UUID v7 ; revoked_at nul par défaut', async () => {
+        const user = await createTestUser(database.prisma)
+        const session = await database.prisma.session.create({ data: { userId: user.id, tokenHash: HASH, expiresAt: inOneHour() } })
+        expect(session.id).toMatch(UUID_V7)
+        expect(session.revokedAt).toBeNull()
+    })
+
+    it.each([
+        { label: 'jeton en clair (base64url)', tokenHash: 'A'.repeat(43) },
+        { label: 'hexadécimal en majuscules', tokenHash: 'A'.repeat(64) },
+        { label: '63 caractères', tokenHash: 'a'.repeat(63) }
+    ])('refuse une empreinte au mauvais format : $label (sessions_token_hash_check)', async ({ tokenHash }) => {
+        const user = await createTestUser(database.prisma)
+        const violation = await violationOf((tx) => tx.session.create({ data: { userId: user.id, tokenHash, expiresAt: inOneHour() } }))
+        expect(violation).toMatchObject({ sqlState: CHECK_VIOLATION })
+        expect(violation.message).toContain('sessions_token_hash_check')
+    })
+
+    it('refuse deux sessions avec la même empreinte', async () => {
+        const user = await createTestUser(database.prisma)
+        await database.prisma.session.create({ data: { userId: user.id, tokenHash: HASH, expiresAt: inOneHour() } })
+        const violation = await violationOf((tx) => tx.session.create({ data: { userId: user.id, tokenHash: HASH, expiresAt: inOneHour() } }))
+        expect(violation).toMatchObject({ sqlState: UNIQUE_VIOLATION })
+        expect(violation.message).toContain('sessions_token_hash_key')
+    })
+
+    it('supprimer un compte supprime ses sessions et ses personnages dans la même instruction (cascade)', async () => {
+        const user = await createTestUser(database.prisma)
+        const other = await createTestUser(database.prisma)
+        await database.prisma.session.create({ data: { userId: user.id, tokenHash: 'b'.repeat(64), expiresAt: inOneHour() } })
+        await database.prisma.session.create({ data: { userId: other.id, tokenHash: 'c'.repeat(64), expiresAt: inOneHour() } })
+        await createTestCharacter(database.prisma, user.id, 'Arthas')
+
+        await database.prisma.user.delete({ where: { id: user.id } })
+
+        expect(await database.prisma.session.count({ where: { userId: user.id } })).toBe(0)
+        expect(await database.prisma.character.count({ where: { userId: user.id } })).toBe(0)
+        expect(await database.prisma.session.count({ where: { userId: other.id } })).toBe(1)
     })
 })
 

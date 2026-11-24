@@ -4,7 +4,10 @@ import { createApp } from './src/app'
 import { checkDatabaseConnection, createDatabase } from './src/database/client'
 import { describeDatabaseError } from './src/database/errors'
 import { createPrismaUserRepository } from './src/repositories/user.repository'
+import { createPrismaSessionRepository } from './src/repositories/session.repository'
 import { createAuthService } from './src/services/auth.service'
+import { createUserService } from './src/services/user.service'
+import { HOUR_MS } from './src/config/auth'
 import { createArgon2PasswordHasher } from './src/services/password-hasher'
 import { describeStartupError, startServer, systemErrorCode } from './src/startup'
 
@@ -56,12 +59,15 @@ async function start(): Promise<void> {
         return
     }
 
-    // Assemblage (DB-04, AUTH-04) : repositories Prisma et hachage Argon2id → services → application.
+    // Assemblage (DB-04, AUTH-04 à AUTH-10) : repositories Prisma et hachage Argon2id → services → application.
+    const userRepository = createPrismaUserRepository(database.prisma)
     const authService = createAuthService({
-        userRepository: createPrismaUserRepository(database.prisma),
-        passwordHasher: createArgon2PasswordHasher()
+        userRepository,
+        sessionRepository: createPrismaSessionRepository(database.prisma),
+        passwordHasher: createArgon2PasswordHasher(),
+        sessionTtlMs: env.SESSION_TTL_HOURS * HOUR_MS
     })
-    const app = createApp({ authService })
+    const app = createApp({ authService, userService: createUserService(userRepository) })
 
     try {
         await startServer(app, env.PORT)

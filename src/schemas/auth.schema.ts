@@ -1,16 +1,13 @@
 import { z } from 'zod'
-import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../config/auth'
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../config/auth'
+import { characterCount, emailSchema, nonEmptyString } from './common.schema'
 
-/* Schémas des routes /api/v1/auth (AUTH-04). Objets stricts : un champ inconnu est rejeté en 400. */
+/* Schémas des routes /api/v1/auth (AUTH-04, AUTH-06). Objets stricts : un champ inconnu est rejeté en 400. */
 
-// Chaîne qui contient au moins un caractère non blanc ; la valeur n'est pas modifiée (règle reprise de FND-04).
-const nonEmptyString = z.string().regex(/\S/, 'Must not be empty')
-
-// Longueur en caractères Unicode : un emoji ou un caractère accentué composé compte pour un seul caractère.
-const characterCount = (value: string): number => [...value].length
+const tooLong = { message: `Must be at most ${PASSWORD_MAX_LENGTH} characters` }
 
 /**
- * Mot de passe : 15 à 128 caractères, sans règle de composition ni confirmation (décision D4 d'AUTH-01 à 04).
+ * Mot de passe d'inscription : 15 à 128 caractères, sans règle de composition ni confirmation (lot L1, D4).
  * La valeur n'est ni rognée ni normalisée : elle est hashée telle quelle. Le maximum limite le coût du hachage.
  */
 export const passwordSchema = z
@@ -18,15 +15,7 @@ export const passwordSchema = z
     .refine((value) => characterCount(value) >= PASSWORD_MIN_LENGTH, {
         message: `Must be at least ${PASSWORD_MIN_LENGTH} characters`
     })
-    .refine((value) => characterCount(value) <= PASSWORD_MAX_LENGTH, {
-        message: `Must be at most ${PASSWORD_MAX_LENGTH} characters`
-    })
-
-/** Email : format vérifié, 254 caractères au plus. La mise en minuscules est faite par le service. */
-export const emailSchema = z
-    .string()
-    .max(EMAIL_MAX_LENGTH, `Must be at most ${EMAIL_MAX_LENGTH} characters`)
-    .pipe(z.email('Must be a valid email'))
+    .refine((value) => characterCount(value) <= PASSWORD_MAX_LENGTH, tooLong)
 
 /** Corps de POST /api/v1/auth/register. */
 export const registerBodySchema = z.strictObject({
@@ -35,4 +24,19 @@ export const registerBodySchema = z.strictObject({
     password: passwordSchema
 })
 
+/**
+ * Corps de POST /api/v1/auth/login.
+ * Le mot de passe n'est pas soumis à la longueur minimale : la règle d'inscription peut évoluer sans bloquer
+ * les comptes existants, et un mot de passe trop court échoue de toute façon à la vérification (401 générique).
+ * Le maximum reste appliqué pour borner le coût de la vérification Argon2id.
+ */
+export const loginBodySchema = z.strictObject({
+    email: emailSchema,
+    password: z
+        .string()
+        .min(1, 'Must not be empty')
+        .refine((value) => characterCount(value) <= PASSWORD_MAX_LENGTH, tooLong)
+})
+
 export type RegisterBody = z.infer<typeof registerBodySchema>
+export type LoginBody = z.infer<typeof loginBodySchema>

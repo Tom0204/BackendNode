@@ -1,18 +1,26 @@
 import argon2 from 'argon2'
+import { createHash } from 'node:crypto'
 import type { Express } from 'express'
 import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { EXIT_FAILURE, EXIT_OK, runAccountCommand } from '../../src/cli/account-command'
 import type { Database } from '../../src/database/client'
+import { createPrismaUserRepository } from '../../src/repositories/user.repository'
 import { expectErrorResponse, expectSuccessResponse } from '../helpers/http'
-import { deleteAllPlayerData } from '../helpers/player-fixtures'
+import { createTestCharacter, deleteAllPlayerData } from '../helpers/player-fixtures'
 import { requireSafeTestDatabaseUrl } from '../helpers/test-database'
 
-/* Inscription (AUTH-01, AUTH-03, AUTH-04) branchée comme dans server.ts : PostgreSQL (mmorpg_test) et Argon2id réel.
+/* Comptes et authentification (AUTH-01 à AUTH-10) branchés comme dans server.ts : PostgreSQL (mmorpg_test), Argon2id réel.
  * La persistance est vérifiée avec deux instances d'application indépendantes : modules rechargés,
  * pool, client Prisma et application neufs ; la première connexion est fermée avant que la seconde ne lise.
  */
 
 const REGISTER = '/api/v1/auth/register'
+const LOGIN = '/api/v1/auth/login'
+const LOGOUT = '/api/v1/auth/logout'
+const USERS = '/api/v1/users'
+const ME = `${USERS}/me`
+const DAY_MS = 24 * 60 * 60 * 1000
 const PASSWORD = 'correct horse battery staple'
 
 interface AppInstance {
@@ -25,15 +33,20 @@ async function startAppInstance(): Promise<AppInstance> {
     vi.resetModules()
     const { createDatabase } = await import('../../src/database/client')
     const { createPrismaUserRepository } = await import('../../src/repositories/user.repository')
+    const { createPrismaSessionRepository } = await import('../../src/repositories/session.repository')
     const { createAuthService } = await import('../../src/services/auth.service')
+    const { createUserService } = await import('../../src/services/user.service')
     const { createArgon2PasswordHasher } = await import('../../src/services/password-hasher')
     const { createApp } = await import('../../src/app')
     const database = createDatabase(requireSafeTestDatabaseUrl())
+    const userRepository = createPrismaUserRepository(database.prisma)
     const authService = createAuthService({
-        userRepository: createPrismaUserRepository(database.prisma),
-        passwordHasher: createArgon2PasswordHasher()
+        userRepository,
+        sessionRepository: createPrismaSessionRepository(database.prisma),
+        passwordHasher: createArgon2PasswordHasher(),
+        sessionTtlMs: DAY_MS
     })
-    return { app: createApp({ authService }), database }
+    return { app: createApp({ authService, userService: createUserService(userRepository) }), database }
 }
 
 async function stopAppInstance({ database }: AppInstance): Promise<void> {
@@ -114,5 +127,134 @@ describe('Inscription sur PostgreSQL avec Argon2id', () => {
         } finally {
             await stopAppInstance(second)
         }
+    })
+})
+
+describe('Connexion, permissions et déconnexion sur PostgreSQL', () => {
+    let instance: AppInstance
+    let aliceToken: string
+
+    beforeAll(async () => {
+        instance = await startAppInstance()
+    })
+
+    afterAll(async () => {
+        await stopAppInstance(instance)
+    })
+
+    const login = (email: string, password = PASSWORD) => request(instance.app).post(LOGIN).send({ email, password })
+    const auth = (token: string) => `Bearer ${token}`
+    const silent = { info: () => undefined, error: () => undefined }
+
+    it('connexion : 200, session enregistrée avec la seule empreinte SHA-256 du jeton, expiration à 24 h', async () => {
+        const before = Date.now()
+        const response = await login('alice@example.com')
+        expectSuccessResponse(response, 200, 'Login successful')
+        aliceToken = response.body.data.accessToken
+
+        const sessions = await instance.database.prisma.session.findMany({ where: { user: { email: 'alice@example.com' } } })
+        expect(sessions).toHaveLength(1)
+        expect(sessions[0]?.tokenHash).toBe(createHash('sha256').update(aliceToken).digest('hex'))
+        expect(sessions[0]?.tokenHash).not.toContain(aliceToken)
+        expect(sessions[0]?.revokedAt).toBeNull()
+        const expiresAt = sessions[0]?.expiresAt.getTime() ?? 0
+        expect(expiresAt).toBeGreaterThanOrEqual(before + DAY_MS)
+        expect(expiresAt).toBeLessThanOrEqual(Date.now() + DAY_MS)
+        expect(response.body.data.expiresAt).toBe(sessions[0]?.expiresAt.toISOString())
+    })
+
+    it('mauvais mot de passe et email inconnu : 401 générique', async () => {
+        expectErrorResponse(await login('alice@example.com', 'wrong horse battery staple'), 401, 'INVALID_CREDENTIALS', [])
+        expectErrorResponse(await login('personne@example.com'), 401, 'INVALID_CREDENTIALS', [])
+    })
+
+    it('la session survit au redémarrage : une nouvelle instance accepte le jeton', async () => {
+        await stopAppInstance(instance)
+        instance = await startAppInstance()
+        expectSuccessResponse(await request(instance.app).get(ME).set('Authorization', auth(aliceToken)), 200, 'User retrieved successfully', {
+            id: expect.any(String),
+            name: 'Alice',
+            email: 'alice@example.com',
+            role: 'PLAYER'
+        })
+    })
+
+    it('déconnexion : seule la session utilisée est révoquée en base ; l’autre reste valide', async () => {
+        const otherToken = (await login('alice@example.com')).body.data.accessToken
+
+        expect((await request(instance.app).post(LOGOUT).set('Authorization', auth(aliceToken))).status).toBe(204)
+
+        expect((await request(instance.app).get(ME).set('Authorization', auth(aliceToken))).status).toBe(401)
+        expect((await request(instance.app).get(ME).set('Authorization', auth(otherToken))).status).toBe(200)
+        const sessions = await instance.database.prisma.session.findMany({ where: { user: { email: 'alice@example.com' } } })
+        expect(sessions.map((session) => session.revokedAt !== null).sort()).toEqual([false, true])
+        aliceToken = otherToken
+    })
+
+    it('script d’administration (Prisma) : promotion de Bob, qui accède alors à la liste ; Alice reçoit 403', async () => {
+        const repository = createPrismaUserRepository(instance.database.prisma)
+        expect(await runAccountCommand(['promote', 'bob@example.com'], repository, silent)).toBe(EXIT_OK)
+
+        const bobToken = (await login('bob@example.com')).body.data.accessToken
+        const list = await request(instance.app).get(USERS).set('Authorization', auth(bobToken))
+        expect(list.status).toBe(200)
+        expect(list.body.meta).toEqual({ pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 } })
+        expectErrorResponse(await request(instance.app).get(USERS).set('Authorization', auth(aliceToken)), 403, 'FORBIDDEN', [])
+    })
+
+    it('script : adresse inconnue → code 1, aucun compte créé', async () => {
+        const repository = createPrismaUserRepository(instance.database.prisma)
+        const count = await instance.database.prisma.user.count()
+        expect(await runAccountCommand(['promote', 'personne@example.com'], repository, silent)).toBe(EXIT_FAILURE)
+        expect(await instance.database.prisma.user.count()).toBe(count)
+    })
+
+    it('compte désactivé par le script : sessions refusées (401), connexion refusée (403) ; réactivation', async () => {
+        const repository = createPrismaUserRepository(instance.database.prisma)
+
+        await runAccountCommand(['disable', 'alice@example.com'], repository, silent)
+        expect((await request(instance.app).get(ME).set('Authorization', auth(aliceToken))).status).toBe(401)
+        expectErrorResponse(await login('alice@example.com'), 403, 'ACCOUNT_DISABLED', [])
+
+        await runAccountCommand(['enable', 'alice@example.com'], repository, silent)
+        expect((await request(instance.app).get(ME).set('Authorization', auth(aliceToken))).status).toBe(200)
+    })
+
+    it("joueur qui vise le compte d'un autre : 404, aucune ligne supprimée", async () => {
+        const bob = await instance.database.prisma.user.findUniqueOrThrow({ where: { email: 'bob@example.com' } })
+        const users = await instance.database.prisma.user.count()
+        const sessions = await instance.database.prisma.session.count()
+
+        expectErrorResponse(await request(instance.app).delete(`${USERS}/${bob.id}`).set('Authorization', auth(aliceToken)), 404, 'USER_NOT_FOUND', [])
+
+        expect(await instance.database.prisma.user.count()).toBe(users)
+        expect(await instance.database.prisma.session.count()).toBe(sessions)
+    })
+
+    it('administrateur qui supprime un compte : compte, personnages et sessions supprimés ensemble', async () => {
+        const alice = await instance.database.prisma.user.findUniqueOrThrow({ where: { email: 'alice@example.com' } })
+        await createTestCharacter(instance.database.prisma, alice.id, 'Arthas')
+        expect(await instance.database.prisma.session.count({ where: { userId: alice.id } })).toBe(2)
+        const bobToken = (await login('bob@example.com')).body.data.accessToken
+
+        expect((await request(instance.app).delete(`${USERS}/${alice.id}`).set('Authorization', auth(bobToken))).status).toBe(204)
+
+        expect(await instance.database.prisma.user.findUnique({ where: { id: alice.id } })).toBeNull()
+        expect(await instance.database.prisma.character.count({ where: { userId: alice.id } })).toBe(0)
+        expect(await instance.database.prisma.session.count({ where: { userId: alice.id } })).toBe(0)
+        expect((await request(instance.app).get(ME).set('Authorization', auth(aliceToken))).status).toBe(401)
+    })
+
+    it('joueur qui supprime son propre compte : 204, cascade, ses jetons ne valent plus rien', async () => {
+        await request(instance.app).post(REGISTER).send({ name: 'Carol', email: 'carol@example.com', password: PASSWORD })
+        const carolToken = (await login('carol@example.com')).body.data.accessToken
+        const carol = await instance.database.prisma.user.findUniqueOrThrow({ where: { email: 'carol@example.com' } })
+        await createTestCharacter(instance.database.prisma, carol.id, 'Jaina')
+
+        expect((await request(instance.app).delete(`${USERS}/${carol.id}`).set('Authorization', auth(carolToken))).status).toBe(204)
+
+        expect(await instance.database.prisma.character.count({ where: { userId: carol.id } })).toBe(0)
+        expect(await instance.database.prisma.session.count({ where: { userId: carol.id } })).toBe(0)
+        expect((await request(instance.app).get(ME).set('Authorization', auth(carolToken))).status).toBe(401)
     })
 })

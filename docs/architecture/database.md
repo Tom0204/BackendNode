@@ -118,7 +118,7 @@ Les tests base de données ne doivent jamais toucher une autre base que `mmorpg_
    Le message d'erreur ne recopie jamais l'URL, qui contient un mot de passe.
 3. **Commandes séparées :** `npm test` reste sans base de données. Les tests base de données ont leur propre commande et leur propre configuration Vitest.
 
-Implémentation : `tests/helpers/test-database.ts` (tests : `tests/unit/test-database-guard.test.ts`). `npm run test:db` (`vitest.db.config.ts`) applique la garde, puis `prisma migrate deploy` et le seed des données de référence sur `mmorpg_test` (`tests/database/global-setup.ts`), avant les tests de `tests/database/`. Les données de joueurs nécessaires aux tests sont créées et supprimées par les tests (`tests/helpers/player-fixtures.ts`). `TEST_DATABASE_URL` est lue dans l'environnement, sinon dans le `.env`, dont aucune autre clé n'est lue.
+Implémentation : `tests/helpers/test-database.ts` (tests : `tests/unit/test-database-guard.test.ts`). `npm run test:db` (`vitest.db.config.ts`) applique la garde, puis `prisma migrate deploy` et le seed des données de référence sur `mmorpg_test` (`tests/database/global-setup.ts`), avant les tests de `tests/database/`. Les données de joueurs nécessaires aux tests sont créées et supprimées par les tests (`tests/helpers/player-fixtures.ts`). Seconde barrière (lot L2) : avant toute suppression, `deleteAllPlayerData` vérifie auprès du serveur que `current_database()` vaut `mmorpg_test`, et refuse sinon. `TEST_DATABASE_URL` est lue dans l'environnement, sinon dans le `.env`, dont aucune autre clé n'est lue.
 
 ## 7. Suites
 

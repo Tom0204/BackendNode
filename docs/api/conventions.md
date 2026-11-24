@@ -95,6 +95,58 @@ Content-Type: application/json
 
 La forme publique d'un compte est `{ id, name, email, role }` : ni mot de passe, ni hash, ni dates. Le seul rôle existant est `PLAYER` ; les autres rôles sont décidés en AUTH-08. Ce changement cassant (suppression des routes `/users`) est admis par la section 13.
 
+> Depuis le lot L2 (AUTH-02, AUTH-05 à AUTH-10), les routes `/api/v1/users` sont réintroduites avec leurs permissions : voir section 1.5.
+
+### 1.5 Authentification, permissions et comptes (AUTH-02, AUTH-05 à AUTH-10)
+
+**Stratégie (AUTH-05).** Sessions opaques stockées en PostgreSQL :
+- la connexion renvoie un jeton aléatoire de 256 bits (43 caractères base64url) qui ne contient aucune donnée ;
+- le serveur n'en garde que l'empreinte SHA-256 ;
+- durée de vie **absolue** de 24 heures (`SESSION_TTL_HOURS`, de 1 à 720), sans prolongation ni jeton de renouvellement : une nouvelle connexion est nécessaire ensuite ;
+- la déconnexion révoque réellement la session. Désactiver ou supprimer un compte invalide immédiatement toutes ses sessions.
+
+**Transport.** Le jeton est envoyé dans l'en-tête `Authorization: Bearer <jeton>`, jamais dans l'URL, un paramètre de requête, le corps ou un cookie. Aucun cookie n'est utilisé : CORS reste sans `credentials`.
+
+| Route | Accès | Succès | Refus |
+|---|---|---|---|
+| `POST /api/v1/auth/register` | Public | 201 (section 1.4) | 400, 409 |
+| `POST /api/v1/auth/login` | Public, 10 requêtes par 15 minutes et par adresse IP | 200 avec le jeton | 400 ; 401 `INVALID_CREDENTIALS` ; 403 `ACCOUNT_DISABLED` ; 429 |
+| `POST /api/v1/auth/logout` | Authentifié | 204 : révoque la session utilisée, et elle seule | 401 |
+| `GET /api/v1/users` | Administrateur | 200, liste paginée (section 9) | 401 ; 403 `FORBIDDEN` ; 400 |
+| `GET /api/v1/users/me`, `PATCH /api/v1/users/me` | Authentifié : son propre compte | 200 | 401 ; 400 ; 409 |
+| `GET`, `PATCH`, `DELETE /api/v1/users/:id` | Propriétaire ou administrateur | 200 ; 204 pour la suppression | 401 ; 400 ; **404 `USER_NOT_FOUND`** pour le compte d'un autre joueur (section 5.3) ; 409 |
+
+```http
+POST /api/v1/auth/login HTTP/1.1
+Content-Type: application/json
+
+{ "email": "alice@example.com", "password": "correct horse battery staple" }
+```
+
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "accessToken": "q4V0Y6mZ2c3l8u1Jb9wGfKpT7rXsEoNaHdLiQyCvBkM",
+    "tokenType": "Bearer",
+    "expiresAt": "2026-11-25T09:00:00.000Z",
+    "user": { "id": "0193a5f4-2b3c-7d4e-9f50-617283940a1b", "name": "Alice", "email": "alice@example.com", "role": "PLAYER" }
+  }
+}
+```
+
+**Règles :**
+- **Connexion.** L'email est mis en minuscules. Le mot de passe n'est pas soumis à la longueur minimale de l'inscription, mais 128 caractères au plus.
+  - Email inconnu ou mauvais mot de passe : même réponse 401 `INVALID_CREDENTIALS` (« Invalid email or password »), avec une vérification Argon2id dans les deux cas pour une durée de réponse comparable.
+  - Compte désactivé : 403 `ACCOUNT_DISABLED`, seulement si le mot de passe est correct.
+  - La réponse porte `Cache-Control: no-store`.
+- **Routes protégées.** Jeton absent, mal formé, inconnu, expiré, révoqué, ou compte désactivé : 401 `UNAUTHENTICATED` (« Authentication required »), sans distinction, avec l'en-tête `WWW-Authenticate: Bearer realm="api"`. L'authentification est vérifiée avant la validation : sans jeton valide, la réponse est 401 quel que soit le corps.
+- **Rôles.** `PLAYER` (par défaut) et `ADMIN`. Le rôle et le statut ne sont modifiables par aucune route : seul le script local `npm run account` les change (section 7). Le rôle est relu à chaque requête : une promotion ou une désactivation prend effet immédiatement.
+- **Modification d'un compte.** `name` et `email` seulement ; `role`, `status`, `id`, `password` et tout autre champ sont refusés en 400. **Limite connue :** le mot de passe actuel n'est pas demandé pour changer l'email ; le changement de mot de passe n'existe pas encore.
+- **Suppression d'un compte.** Par son propriétaire ou par un administrateur. Un joueur qui vise un autre compte reçoit 404, sans aucun effacement. La suppression est une seule instruction : les personnages et les sessions sont supprimés avec le compte (cascade).
+- **Routes absentes.** `POST /api/v1/users` (remplacée par l'inscription) et `PUT /api/v1/users/:id` n'existent pas. Toutes les routes `/users` exigent d'abord un jeton : sans jeton, 401 ; avec un jeton, 404 `ROUTE_NOT_FOUND`.
+
 ## 2. Requêtes
 
 - **Format :**
@@ -178,7 +230,7 @@ CORS ne concerne que les **navigateurs** : une requête sans en-tête `Origin` (
 - **Format de `CORS_ORIGINS` :** origines séparées par des virgules, par exemple `https://jeu.example.com,http://localhost:5173`. Chaque origine s'écrit `http(s)://hôte[:port]`, en minuscules et sans port par défaut. Sont refusés au démarrage : un autre protocole, un chemin, un `/` final, des paramètres, un fragment, des identifiants et le joker `*`. Une valeur vide équivaut à une variable non définie.
 - **Origine non autorisée :** la réponse ne contient pas `Access-Control-Allow-Origin` ; le navigateur refuse alors au JavaScript de la lire. Une préflight reçoit quand même un 204, sans autorisation.
 - **En-têtes lisibles par le navigateur :** `X-Request-Id`, `Retry-After`, `RateLimit` et `RateLimit-Policy` (`Access-Control-Expose-Headers`).
-- **Cookies :** non autorisés pour le moment (`Access-Control-Allow-Credentials` absent) ; à revoir avec la stratégie d'authentification (AUTH-05).
+- **Cookies :** non utilisés (`Access-Control-Allow-Credentials` absent) : l'authentification passe par l'en-tête `Authorization: Bearer` (AUTH-05, section 1.5).
 
 #### En-têtes de sécurité
 
@@ -446,8 +498,12 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
 
 | Code | Statut | Endpoints | Ticket |
 |---|---|---|---|
-| `USER_NOT_FOUND` | 404 | Aucun endpoint depuis le retrait des routes `/api/v1/users` ; réservé à leur réintroduction | FND-03 (AUTH-04) |
-| `EMAIL_ALREADY_USED` | 409 | `POST /api/v1/auth/register` | FND-03 (AUTH-04) |
+| `USER_NOT_FOUND` | 404 | `GET`, `PATCH`, `DELETE /api/v1/users/:id` (compte inexistant ou d'un autre joueur) | FND-03 (AUTH-02) |
+| `EMAIL_ALREADY_USED` | 409 | `POST /api/v1/auth/register`, `PATCH /api/v1/users/:id`, `PATCH /api/v1/users/me` | FND-03 (AUTH-04, AUTH-09) |
+| `INVALID_CREDENTIALS` | 401 | `POST /api/v1/auth/login` (email inconnu ou mauvais mot de passe, même réponse) | AUTH-06 |
+| `ACCOUNT_DISABLED` | 403 | `POST /api/v1/auth/login` (compte désactivé, mot de passe correct) | AUTH-06 |
+| `UNAUTHENTICATED` | 401 | Toute route protégée : jeton absent, invalide, expiré, révoqué ou compte désactivé | AUTH-07 |
+| `FORBIDDEN` | 403 | `GET /api/v1/users` pour un joueur | AUTH-08 |
 
 ## 7. Identifiants et autorisations
 
@@ -455,6 +511,8 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
 - **En base**, les identifiants sont des UUID v7 générés par PostgreSQL 18 (`uuidv7()`) et stockés dans le type `uuid` natif (voir `docs/architecture/database.md`, SET-04). Un UUID v7 laisse lire son instant de création, à la milliseconde : cette information n'est pas considérée comme confidentielle.
 - Le serveur valide le **format** des identifiants reçus : un format invalide donne 400.
 - **Un UUID ne remplace jamais un contrôle d'autorisation.** Le fait qu'un identifiant soit impossible à deviner n'est pas une protection : chaque accès vérifie, côté serveur, l'authentification, la propriété de la ressource et les permissions.
+- **Routes publiques** (sans jeton) : `GET /health`, `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, et les données de référence sans propriétaire quand elles existeront (`GET /api/v1/classes`, décision de CHAR-01). **Toutes les autres routes de `/api/v1` sont protégées** (section 1.5) : elles exigent un jeton valide, puis appliquent leurs règles de propriété et de rôle dans les services.
+- **Administration locale :** le rôle (`PLAYER`, `ADMIN`) et le statut (`ACTIVE`, `DISABLED`) d'un compte existant se changent uniquement par `npm run account -- promote|demote|disable|enable <email>`, exécuté sur le serveur. Ce script ne crée jamais de compte ; une adresse inconnue est signalée (code de sortie 1) sans rien modifier.
 
 ## 8. Nommage
 
@@ -569,7 +627,7 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | Routes sans préfixe `/api/v1`, réponses sans enveloppe, route `GET /` | Réalisé (FND-07) : voir section 1.2 |
 | Corps envoyé dans un autre format que JSON, refusé en 400 au lieu de 415 | Réalisé (FND-08) |
 | Identifiants numériques | Réalisé (DB-04) : voir section 1.3 |
-| Accès sans autorisation | Routes `/api/v1/users` supprimées (AUTH-04, section 1.4) ; permissions à leur réintroduction (AUTH-02, après AUTH-07 et AUTH-08) |
+| Accès sans autorisation | Réalisé (AUTH-02, AUTH-05 à AUTH-10) : voir sections 1.5 et 7 |
 
 ## 16. Historique
 
@@ -584,3 +642,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | 2026-11-20 | Identifiants en base : UUID v7 générés par PostgreSQL 18, choix finalisé (SET-04) ; précision sans effet sur le contrat actuel de l'API |
 | 2026-11-23 | Utilisateurs persistants (DB-04) : identifiants UUID dans `/api/v1/users/:id`, email en minuscules, tri par date de création, plus d'utilisateurs initiaux (section 1.3) ; changement cassant admis (section 13) |
 | 2026-11-23 | Inscription `POST /api/v1/auth/register` (AUTH-01, AUTH-03, AUTH-04) ; suppression des routes `/api/v1/users` en attendant leurs permissions ; champ `role` dans la forme publique d'un compte (section 1.4) ; changement cassant admis (section 13) |
+| 2026-11-24 | Authentification (AUTH-02, AUTH-05 à AUTH-10) : connexion, déconnexion, jeton `Bearer`, routes `/api/v1/users` réintroduites avec permissions (sans POST ni PUT), `/users/me`, liste paginée ; codes `INVALID_CREDENTIALS`, `ACCOUNT_DISABLED`, `UNAUTHENTICATED`, `FORBIDDEN` ; routes publiques et protégées (sections 1.5 et 7) ; changement cassant admis (section 13) |

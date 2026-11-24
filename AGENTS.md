@@ -135,9 +135,9 @@ Tests actuels :
 - Les tests ne doivent pas importer `server.ts`.
 - Les modules avec état doivent être isolés conformément aux helpers existants.
 - Les tests doivent couvrir les cas nominaux, erreurs, limites et non-régressions.
-- `tests/database/` pour les tests utilisant PostgreSQL : exclusivement la base `mmorpg_test`, protégée par `tests/helpers/test-database.ts`, et lancés uniquement par `npm run test:db`.
+- `tests/database/` pour les tests utilisant PostgreSQL : exclusivement la base `mmorpg_test`, protégée par `tests/helpers/test-database.ts` (URL) et par `deleteAllPlayerData` (`current_database()` vérifiée avant tout nettoyage), et lancés uniquement par `npm run test:db`.
 
-Dernier état connu : **316 tests validés après AUTH-01/03/04** (`npm test`, sans base) et **66 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
+Dernier état connu : **441 tests validés après le lot L2 (AUTH-02, AUTH-05 à AUTH-10)** (`npm test`, sans base) et **94 tests base de données** (`npm run test:db`). Ce nombre doit être vérifié dans le dépôt avant d'être présenté comme l'état actuel.
 
 Commandes principales :
 
@@ -153,6 +153,7 @@ Commandes principales :
 | `npm run db:up` / `npm run db:down` | Démarrage / arrêt du conteneur PostgreSQL. |
 | `npm run db:generate`, `db:migrate`, `db:status`, `db:reset` | Client Prisma et migrations (`db:reset` est destructif). |
 | `npm run db:seed` | Données de référence (idempotent, à relancer après `db:reset`). |
+| `npm run account -- <promote\|demote\|disable\|enable> <email>` | Rôle ou statut d'un compte existant (base `DATABASE_URL`) ; ne crée jamais de compte. |
 
 Avant de déclarer un ticket terminé, exécuter les vérifications adaptées, notamment le typecheck, les tests et le build. Ne jamais annoncer un test réussi s'il n'a pas réellement été exécuté.
 
@@ -170,10 +171,11 @@ Les tickets suivants sont validés :
 - DB-01.
 - DB-02 et DB-03.
 - DB-04.
-
-Réalisés, en attente de validation : AUTH-01, AUTH-03 et AUTH-04 ; AUTH-02 partiel (permissions reportées après AUTH-07 et AUTH-08).
+- AUTH-01, AUTH-03 et AUTH-04 (lot L1, réalisés) ; AUTH-02 était alors partiel (permissions reportées au lot L2).
+- AUTH-02, AUTH-05, AUTH-06, AUTH-07, AUTH-08, AUTH-09 et AUTH-10 (lot L2 ; hash du commit à reporter au début du lot suivant).
 
 Derniers commits connus :
+- AUTH-01, AUTH-03 et AUTH-04 : `4e37896`.
 - DB-04 : `037dd8e`.
 - DB-02 et DB-03 : `d6285f5`.
 - DB-01 : `f858ab4`.
@@ -185,9 +187,10 @@ Derniers commits connus :
 FND-08 est **validé**, et non en attente de validation.
 
 État fonctionnel connu :
-- Inscription `POST /api/v1/auth/register` (mot de passe hashé en Argon2id, rôle `PLAYER`) ; routes `/api/v1/users` retirées jusqu'aux permissions (AUTH-02).
+- Inscription, connexion et déconnexion (`/api/v1/auth/register`, `login`, `logout`) : sessions opaques en PostgreSQL, jeton `Authorization: Bearer`, 24 heures.
+- Routes protégées `/api/v1/users` (liste réservée aux administrateurs, `/:id` pour le propriétaire ou un administrateur, `/me`) ; rôles `PLAYER` et `ADMIN`, statut `ACTIVE` ou `DISABLED`, gérés par `npm run account`.
 - PostgreSQL et Prisma configurés (DB-01) ; modèle, migration `init` et données de référence en place (DB-02, DB-03) ; repositories persistants des utilisateurs et des personnages (DB-04).
-- Pas encore de connexion ni d'authentification des requêtes (AUTH-05 à AUTH-07).
+- Pas encore de changement de mot de passe ni de nettoyage des sessions expirées.
 - Pas encore de Front-End.
 
 Ces informations sont un point de repère, pas une preuve de l'état actuel. Vérifier Git, les fichiers, les scripts et les tests avant chaque intervention.

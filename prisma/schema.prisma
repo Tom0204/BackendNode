@@ -22,28 +22,58 @@ datasource db {
 // Données des joueurs
 // ---------------------------------------------------------------------------
 
-/// Compte joueur. Mot de passe, rôle et états de compte : AUTH-01.
+/// Compte joueur. Mot de passe et rôle : AUTH-01 ; statut : AUTH-06 ; rôle ADMIN : AUTH-08.
 model User {
   id           String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
   name         String
   /// Toujours en minuscules (CHECK) : l'unicité ne dépend pas de la casse.
   email        String      @unique
-  /// Hash Argon2id du mot de passe (AUTH-01, AUTH-03). Jamais lu par les repositories hors authentification.
+  /// Hash Argon2id du mot de passe (AUTH-01, AUTH-03). Lu uniquement pour la connexion (AUTH-06).
   passwordHash String      @map("password_hash")
-  /// Rôle du compte (AUTH-01). Les autres rôles et les permissions relèvent d'AUTH-08.
+  /// Rôle du compte (AUTH-01, AUTH-08). Modifiable uniquement par le script d'administration.
   role         UserRole    @default(PLAYER)
+  /// Statut du compte (AUTH-06) : un compte désactivé ne peut ni se connecter ni utiliser ses sessions.
+  status       UserStatus  @default(ACTIVE)
   createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
   characters   Character[]
+  sessions     Session[]
 
   @@map("users")
 }
 
-/// Rôles des comptes. PLAYER seul pour l'instant : les rôles supplémentaires (administrateur) sont décidés en AUTH-08.
+/// Rôles des comptes (AUTH-08) : joueur et administrateur.
 enum UserRole {
   PLAYER
+  ADMIN
 
   @@map("user_role")
+}
+
+/// Statuts des comptes (AUTH-06).
+enum UserStatus {
+  ACTIVE
+  DISABLED
+
+  @@map("user_status")
+}
+
+/// Session de connexion (AUTH-05) : jeton opaque, dont seule l'empreinte SHA-256 est stockée.
+/// Supprimée avec son compte (cascade). Les sessions expirées ou révoquées restent en base (nettoyage reporté).
+model Session {
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  /// Empreinte SHA-256 du jeton, en hexadécimal (CHECK) : le jeton lui-même n'est jamais stocké.
+  tokenHash String    @unique @map("token_hash")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Fin de validité absolue, calculée par le serveur à la connexion.
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  /// Date de déconnexion (AUTH-10) ; null tant que la session n'est pas révoquée.
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
 }
 
 /// Personnage d'un joueur. Les statistiques ne sont pas stockées : elles se calculent

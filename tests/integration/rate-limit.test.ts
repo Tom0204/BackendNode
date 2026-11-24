@@ -189,12 +189,13 @@ describe('limiteur strict (prêt pour QUAL-02, non branché)', () => {
         expect(statuses[10]).toBe(429)
     })
 
-    it("n'est branché sur aucune route de l'application", async () => {
+    it("n'est branché que sur la connexion (AUTH-06) : l'inscription garde la seule limite globale", async () => {
         const { app } = await loadFreshApp()
 
-        // Seul le limiteur global s'applique : 300 requêtes par fenêtre de 60 secondes.
-        const response = await request(app).get(REGISTER)
-        expect(response.headers['ratelimit-policy']).toBe('300;w=60')
+        // Inscription : seul le limiteur global s'applique, 300 requêtes par fenêtre de 60 secondes.
+        expect((await request(app).post(REGISTER).send({})).headers['ratelimit-policy']).toBe('300;w=60')
+        // Connexion : le limiteur strict, placé après le global, fixe les en-têtes : 10 requêtes par 15 minutes.
+        expect((await request(app).post('/api/v1/auth/login').send({})).headers['ratelimit-policy']).toBe('10;w=900')
     })
 })
 

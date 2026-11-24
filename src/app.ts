@@ -4,6 +4,10 @@ import healthRoutes from './routes/health.routes'
 import { createAuthRoutes } from './routes/auth.routes'
 import { createAuthController } from './controllers/auth.controller'
 import type { AuthService } from './services/auth.service'
+import { createUserRoutes } from './routes/user.routes'
+import { createUserController } from './controllers/user.controller'
+import type { UserService } from './services/user.service'
+import { createRequireAuth } from './middlewares/auth.middleware'
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
 import { createRequestLogger } from './middlewares/request-logger.middleware'
 import { createCorsMiddleware, createSecurityHeaders, requireJsonContentType } from './middlewares/security.middleware'
@@ -18,10 +22,11 @@ import { corsAllowedOrigins, JSON_BODY_LIMIT } from './config/http'
  */
 export interface AppDependencies {
     authService: AuthService
+    userService: UserService
 }
 
 /** Construit l'application Express. Aucune connexion n'est ouverte ici. */
-export function createApp({ authService }: AppDependencies): Express {
+export function createApp({ authService, userService }: AppDependencies): Express {
     const app = express()
 
     // L'ordre compte (FND-08) :
@@ -40,7 +45,15 @@ export function createApp({ authService }: AppDependencies): Express {
     app.use(express.json({ limit: JSON_BODY_LIMIT }))
 
     app.use('/health', healthRoutes)
-    app.use(API_V1_PREFIX, createApiV1Router({ auth: createAuthRoutes(createAuthController(authService)) }))
+    // Authentification des routes protégées (AUTH-07) : un seul middleware, partagé par les routeurs.
+    const requireAuth = createRequireAuth(authService)
+    app.use(
+        API_V1_PREFIX,
+        createApiV1Router({
+            auth: createAuthRoutes(createAuthController(authService), requireAuth),
+            users: createUserRoutes(createUserController(userService), requireAuth)
+        })
+    )
 
     app.use(notFoundHandler)
     app.use(errorHandler)

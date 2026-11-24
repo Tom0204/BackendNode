@@ -1,4 +1,4 @@
-/* Règles des comptes et des mots de passe (AUTH-01, AUTH-03, AUTH-04). */
+/* Règles des comptes, des mots de passe et des sessions (AUTH-01 à AUTH-10). */
 
 /** Longueur d'un mot de passe, en caractères Unicode (et non en unités UTF-16) : 15 à 128, sans règle de composition. */
 export const PASSWORD_MIN_LENGTH = 15
@@ -16,3 +16,9 @@ export const ARGON2ID_OPTIONS = {
     timeCost: 2,
     parallelism: 1
 } as const
+
+/** Une heure, en millisecondes : la durée des sessions est configurée en heures (SESSION_TTL_HOURS). */
+export const HOUR_MS = 60 * 60 * 1000
+
+/** Type de jeton annoncé au client et attendu dans l'en-tête Authorization (RFC 6750). */
+export const TOKEN_TYPE = 'Bearer'

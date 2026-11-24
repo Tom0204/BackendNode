@@ -1,14 +1,14 @@
 # Modèle de données (DB-02, DB-03)
 
 > **Statut :** modèle relationnel initial validé par le propriétaire du projet (DB-02, 2026-11-23).
-> Schéma : `prisma/schema.prisma`. Migrations : `prisma/migrations/20261123092444_init/`, `20261123125545_auth_user_fields/` (AUTH-01).
+> Schéma : `prisma/schema.prisma`. Migrations : `prisma/migrations/20261123092444_init/`, `20261123125545_auth_user_fields/` (AUTH-01), `20261124090906_auth_sessions/` (AUTH-05 à AUTH-10).
 > Données de référence : `prisma/seed/reference-data.ts` (valeurs de `docs/gameplay/rules.md`).
 
 ## 1. Périmètre
 
 | Inclus | Hors périmètre (ticket) |
 |---|---|
-| Comptes (`users`) et personnages (`characters`), hash du mot de passe et rôle (AUTH-01) | États de compte, compte désactivé (AUTH-06) ; rôles autres que `PLAYER` (AUTH-08) |
+| Comptes (`users`) : hash du mot de passe, rôle et statut (AUTH-01, AUTH-06, AUTH-08) ; sessions de connexion (`sessions`, AUTH-05) ; personnages (`characters`) | Nettoyage des sessions expirées (reporté) ; changement de mot de passe (aucun ticket) |
 | Données de référence du MVP : classes, zone, monstres, objets, butin | Instances de monstres et combats (WORLD-07, COMBAT-01) |
 | | Inventaire et exemplaires d'objets (ITEM-02), portefeuille (ECO-01) |
 | | Statistiques stockées : elles se **calculent** à partir de la classe et du niveau (STAT-01) |
@@ -19,6 +19,7 @@
 ```mermaid
 erDiagram
     users ||--o{ characters : "possède (cascade)"
+    users ||--o{ sessions : "se connecte (cascade)"
     character_classes ||--o{ characters : "classe (restriction)"
     zones ||--o{ characters : "zone courante (restriction)"
     zones ||--o{ zone_monsters : "contient (restriction)"
@@ -31,7 +32,15 @@ erDiagram
         text name
         text email UK "minuscules"
         text password_hash "Argon2id"
-        user_role role "PLAYER"
+        user_role role "PLAYER ou ADMIN"
+        user_status status "ACTIVE ou DISABLED"
+    }
+    sessions {
+        uuid id PK
+        uuid user_id FK
+        text token_hash UK "SHA-256 hexadécimal"
+        timestamptz expires_at
+        timestamptz revoked_at "null si active"
     }
     characters {
         uuid id PK
@@ -97,7 +106,8 @@ Pour la lisibilité, le diagramme regroupe les colonnes de statistiques et omet 
 
 | Table | Rôle | Colonnes | Contraintes |
 |---|---|---|---|
-| `users` | Compte joueur | `id`, `name`, `email`, `password_hash` (obligatoire), `role` (enum `user_role` : `PLAYER`, par défaut `PLAYER`), dates | `email` unique ; `users_email_lowercase_check` : `email = lower(email)`. `password_hash` n'est jamais lu par le repository hors authentification (AUTH-06) |
+| `users` | Compte joueur | `id`, `name`, `email`, `password_hash` (obligatoire), `role` (enum `user_role` : `PLAYER`, `ADMIN` ; `PLAYER` par défaut), `status` (enum `user_status` : `ACTIVE`, `DISABLED` ; `ACTIVE` par défaut), dates | `email` unique ; `users_email_lowercase_check` : `email = lower(email)`. `password_hash` n'est lu que pour la connexion (`findCredentialsByEmail`) |
+| `sessions` | Session de connexion (AUTH-05) | `id`, `user_id`, `token_hash`, `created_at`, `expires_at`, `revoked_at` (nul tant que la session est active) | `token_hash` unique ; `sessions_token_hash_check` : `^[0-9a-f]{64}$` (empreinte SHA-256, jamais le jeton) ; index sur `user_id`. Pas de `updated_at` : seule `revoked_at` change |
 | `characters` | Personnage d'un joueur | `id`, `user_id`, `class_id`, `current_zone_id`, `name`, `normalized_name`, `level` (1 par défaut), `experience` (0 par défaut), dates | `normalized_name` unique ; `characters_name_format_check` : `^[A-Za-z]{3,16}$` ; `characters_normalized_name_check` : `= lower(name)` ; `characters_level_check` : 1 à 10 ; `characters_experience_check` : ≥ 0 ; index sur les trois clés étrangères |
 | `character_classes` | Classe jouable (rules.md §2) | `id`, `code`, `name`, `base_hp`, `base_mana`, `base_attack`, `base_defense`, `base_speed`, `hp_per_level`, `mana_per_level`, `attack_per_level`, `defense_per_level`, `speed_per_level`, dates | `code` unique ; `base_hp` ≥ 1 et autres valeurs ≥ 0 (deux `CHECK`) |
 | `zones` | Zone du monde (rules.md §8) | `id`, `code`, `name`, `min_level`, `max_level`, dates | `code` unique ; `zones_level_range_check` : 1 ≤ `min_level` ≤ `max_level` |
@@ -113,6 +123,7 @@ Les contraintes `CHECK` ne sont pas exprimables dans le schéma Prisma : elles s
 | Relation | Règle | Effet |
 |---|---|---|
 | `users` → `characters` | **Cascade** | Supprimer un compte supprime ses personnages |
+| `users` → `sessions` | **Cascade** | Supprimer un compte supprime ses sessions, dans la même instruction que ses personnages |
 | `character_classes` → `characters` | **Restriction** | Une classe utilisée par un personnage ne peut pas être supprimée |
 | `zones` → `characters` | **Restriction** | La zone courante d'un personnage ne peut pas être supprimée |
 | `zones` → `zone_monsters`, `monsters` → `zone_monsters` | **Restriction** | Une zone ou un monstre associé ne peut pas être supprimé |
@@ -128,6 +139,8 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 | Nom unique sans tenir compte de la casse | `normalized_name` unique + `CHECK` | Remplir `normalized_name = lower(name)` ; erreur 409 (CHAR-03) |
 | Email unique sans tenir compte de la casse | `email` unique + `CHECK` minuscules | Normaliser l'email (minuscules) avant écriture (DB-04, AUTH-04) |
 | Mot de passe jamais stocké en clair | `password_hash` obligatoire | Hash Argon2id calculé par le service avant écriture ; jamais renvoyé (AUTH-03, AUTH-04) |
+| Jeton de session jamais stocké | `sessions_token_hash_check` (64 caractères hexadécimaux) | Seule l'empreinte SHA-256 est écrite (AUTH-05) |
+| Session valide : non révoquée, non expirée, compte actif | — | Vérifié à chaque requête par le service d'authentification, avec son horloge (AUTH-07) |
 | 5 personnages au maximum par compte | — | Vérification dans une transaction (CHAR-03) |
 | Niveau 1 à 10, XP ≥ 0 | `CHECK` | Calcul de progression (STAT-03, STAT-04) |
 | Zone de départ attribuée à la création | `current_zone_id` obligatoire | Attribuer la zone de code `clearing` (`STARTING_ZONE_CODE`), jamais une valeur fournie par le client (DB-04, CHAR-03) |
@@ -136,7 +149,8 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 ## 7. Responsabilités pour les tickets suivants
 
 - **DB-04 (réalisé)** : le service utilisateur écrit `email` en minuscules ; le repository des personnages (`src/repositories/character.repository.ts`) remplit `normalized_name = lower(name)` et place tout nouveau personnage dans la zone `clearing` (`STARTING_ZONE_CODE`, `src/config/gameplay.ts`) ; les identifiants des utilisateurs sont des UUID dans l'API. Listes triées par `created_at`, puis `id`.
-- **AUTH-01 (réalisé)** : migration `auth_user_fields` (`password_hash`, `role`). Statut de compte reporté à AUTH-06, rôles supplémentaires à AUTH-08 (`ALTER TYPE user_role ADD VALUE`).
+- **AUTH-01 (réalisé)** : migration `auth_user_fields` (`password_hash`, `role`).
+- **AUTH-05 à AUTH-10 (réalisés)** : migration `auth_sessions` : valeur `ADMIN` ajoutée à `user_role`, colonne `status`, table `sessions`. Les sessions expirées ou révoquées restent en base ; leur nettoyage est reporté.
 - **CHAR-01, WORLD-01 à 03, ITEM-01, REWARD-01** : les tables existent et sont remplies par le seed. Ces tickets ajoutent repositories, services et endpoints, et d'éventuelles colonnes par de nouvelles migrations.
 - **COMBAT-01, WORLD-07, ITEM-02** : nouvelles tables (combats, instances, inventaire) par de nouvelles migrations.
 
@@ -147,3 +161,4 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 | 2026-11-23 | Création (DB-02, DB-03) |
 | 2026-11-23 | Responsabilités de DB-04 réalisées (section 7) |
 | 2026-11-23 | `password_hash` et `role` ajoutés à `users` (AUTH-01) |
+| 2026-11-24 | Rôle `ADMIN`, statut des comptes et table `sessions` (AUTH-05 à AUTH-10) |
