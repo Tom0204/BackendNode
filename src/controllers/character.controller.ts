@@ -4,7 +4,7 @@ import type { CreateCharacterBody } from '../schemas/character.schema'
 import type { CharacterService } from '../services/character.service'
 import { asyncHandler } from '../utils/async-handler'
 import { successBody } from '../utils/response'
-import { toCharacterResponse } from './character.dto'
+import { toCharacterResponse, toCharacterStatsResponse } from './character.dto'
 
 // Routes protégées : le propriétaire est l'utilisateur authentifié (getAuth), jamais une donnée de la requête.
 // Les paramètres et le corps sont validés en amont (character.routes.ts) ; les droits sont vérifiés par le service.
@@ -24,6 +24,11 @@ export function createCharacterController(service: CharacterService) {
         getById: asyncHandler(async (req: Request, res: Response) => {
             const character = await service.getById(getAuth(req), req.params.characterId)
             res.status(200).json(successBody('Character retrieved successfully', toCharacterResponse(character)))
+        }),
+
+        getStats: asyncHandler(async (req: Request, res: Response) => {
+            const characterStats = await service.getStats(getAuth(req), req.params.characterId)
+            res.status(200).json(successBody('Character stats retrieved successfully', toCharacterStatsResponse(characterStats)))
         })
     }
 }

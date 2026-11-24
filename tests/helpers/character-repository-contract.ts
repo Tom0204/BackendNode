@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_CHARACTERS_PER_ACCOUNT } from '../../src/config/gameplay'
 import type { CharacterClassRepository } from '../../src/repositories/character-class.repository'
 import type { CharacterRepository } from '../../src/repositories/character.repository'
@@ -143,6 +143,50 @@ export function describeCharacterRepositoryContract(label: string, getRepositori
             await repositories.users.delete(owner.id)
             expect(await repositories.characters.findById(character.id)).toBeUndefined()
             expect(await repositories.characters.countByUserId(owner.id)).toBe(0)
+        })
+
+        it('updateProgression : compute reçoit la progression enregistrée ; niveau et XP écrits, rien d’autre', async () => {
+            const character = await create('Arthas')
+            const other = await create('Jaina')
+            const compute = vi.fn(() => ({ level: 3, experience: 7, levelsGained: 2 }))
+
+            const update = await repositories.characters.updateProgression(character.id, compute)
+
+            expect(compute).toHaveBeenCalledOnce()
+            expect(compute).toHaveBeenCalledWith({ level: 1, experience: 0 })
+            expect(update?.result).toEqual({ level: 3, experience: 7, levelsGained: 2 })
+            expect(update?.character).toEqual({ ...character, level: 3, experience: 7, updatedAt: expect.any(Date) })
+            expect(await repositories.characters.findById(character.id)).toEqual(update?.character)
+            expect(await repositories.characters.findById(other.id)).toEqual(other)
+
+            await repositories.characters.updateProgression(character.id, compute)
+            expect(compute).toHaveBeenLastCalledWith({ level: 3, experience: 7 })
+        })
+
+        it('updateProgression : personnage inexistant ou compte supprimé → undefined, compute jamais appelé', async () => {
+            const compute = vi.fn(() => ({ level: 2, experience: 0 }))
+            expect(await repositories.characters.updateProgression(UNKNOWN_ID, compute)).toBeUndefined()
+
+            const character = await create('Arthas')
+            await repositories.users.delete(owner.id)
+            expect(await repositories.characters.updateProgression(character.id, compute)).toBeUndefined()
+            expect(compute).not.toHaveBeenCalled()
+        })
+
+        it('updateProgression : si compute échoue, l’erreur est propagée et rien n’est modifié', async () => {
+            const character = await create('Arthas')
+            const failure = new Error('calcul impossible')
+            await expect(
+                repositories.characters.updateProgression(character.id, () => {
+                    throw failure
+                })
+            ).rejects.toBe(failure)
+            expect(await repositories.characters.findById(character.id)).toEqual(character)
+
+            // Aucun verrou ni état résiduel : une modification suivante aboutit.
+            await expect(
+                repositories.characters.updateProgression(character.id, () => ({ level: 1, experience: 50 }))
+            ).resolves.toMatchObject({ character: { level: 1, experience: 50 } })
         })
     })
 }

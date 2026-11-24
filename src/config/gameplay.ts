@@ -14,3 +14,10 @@ export const MAX_CHARACTERS_PER_ACCOUNT = 5
  * un test PostgreSQL vérifie que l'API et la base acceptent et refusent exactement les mêmes noms.
  */
 export const CHARACTER_NAME_PATTERN = /^[A-Za-z]{3,16}$/
+
+/** Niveau maximal d'un personnage (rules.md §4 et §9), identique à la contrainte SQL characters_level_check (1 à 10). */
+export const MAX_LEVEL = 10
+
+/** Courbe d'expérience (rules.md §4 et §9) : xpRequise(n) = arrondi(XP_CURVE_BASE × n ^ XP_CURVE_EXPONENT). */
+export const XP_CURVE_BASE = 100
+export const XP_CURVE_EXPONENT = 1.5

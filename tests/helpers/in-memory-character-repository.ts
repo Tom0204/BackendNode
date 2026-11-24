@@ -93,6 +93,23 @@ export function createInMemoryCharacterRepository(dependencies: {
 
         async countByUserId(userId) {
             return (await dependencies.users.findById(userId)) ? ownedBy(userId).length : 0
+        },
+
+        async updateProgression(id, compute) {
+            const owner = characters.get(id)?.userId
+            if (!owner || !(await dependencies.users.findById(owner))) {
+                return undefined
+            }
+            // À partir d'ici, aucune attente : lecture, calcul et écriture sont atomiques. Si compute échoue,
+            // rien n'est modifié (comme l'annulation de la transaction PostgreSQL).
+            const stored = characters.get(id)
+            if (!stored) {
+                return undefined
+            }
+            const result = compute({ level: stored.level, experience: stored.experience })
+            const updated: StoredCharacter = { ...stored, level: result.level, experience: result.experience, updatedAt: new Date() }
+            characters.set(id, updated)
+            return { character: copy(updated), result }
         }
     }
 }

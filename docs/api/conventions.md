@@ -147,7 +147,7 @@ Content-Type: application/json
 - **Suppression d'un compte.** Par son propriétaire ou par un administrateur. Un joueur qui vise un autre compte reçoit 404, sans aucun effacement. La suppression est une seule instruction : les personnages et les sessions sont supprimés avec le compte (cascade).
 - **Routes absentes.** `POST /api/v1/users` (remplacée par l'inscription) et `PUT /api/v1/users/:id` n'existent pas. Toutes les routes `/users` exigent d'abord un jeton : sans jeton, 401 ; avec un jeton, 404 `ROUTE_NOT_FOUND`.
 
-### 1.6 Classes et personnages (CHAR-01 à CHAR-05)
+### 1.6 Classes, personnages et statistiques (CHAR-01 à CHAR-05, STAT-02)
 
 | Route | Accès | Succès | Refus |
 |---|---|---|---|
@@ -156,6 +156,7 @@ Content-Type: application/json
 | `POST /api/v1/characters` | Authentifié | 201 | 401 ; 400 ; 422 `CLASS_NOT_FOUND` ; 409 `CHARACTER_LIMIT_REACHED` ; 409 `CHARACTER_NAME_TAKEN` |
 | `GET /api/v1/characters` | Authentifié : ses personnages | 200, tableau (vide s'il n'en a aucun), sans pagination | 401 ; 400 |
 | `GET /api/v1/characters/:characterId` | Authentifié : son personnage | 200 | 401 ; 400 ; **404 `CHARACTER_NOT_FOUND`** (inexistant ou d'un autre joueur, administrateur compris) |
+| `GET /api/v1/characters/:characterId/stats` | Authentifié : son personnage | 200 | 401 ; 400 ; **404 `CHARACTER_NOT_FOUND`** (mêmes règles que le détail) |
 
 Forme d'une classe :
 
@@ -178,7 +179,20 @@ La forme d'un personnage, identique en liste et en détail, est donnée en secti
 - **Ordre des contrôles.** Validation (400), puis existence de la classe (422), puis limite de 5 personnages par compte (409 `CHARACTER_LIMIT_REACHED`), puis nom disponible (409 `CHARACTER_NAME_TAKEN`).
 - **Créations simultanées.** La limite est appliquée dans une transaction qui verrouille le compte : des créations simultanées ne peuvent pas la dépasser.
 - **Propriété.** Le propriétaire est toujours l'utilisateur du jeton. Un personnage n'est visible que par son propriétaire, sans exception pour les administrateurs.
-- **Statistiques.** Elles ne figurent pas dans ces réponses : elles seront exposées par `GET /api/v1/characters/:characterId/stats` (STAT-01, STAT-02).
+- **Statistiques.** Elles ne figurent pas dans la forme d'un personnage : `GET /api/v1/characters/:characterId/stats` les expose (STAT-02), message « Character stats retrieved successfully ». Elles sont recalculées à chaque lecture à partir de la classe et du niveau actuel (`rules.md` §2), jamais stockées :
+
+  ```json
+  {
+    "characterId": "0193a5f2-7c1e-7b3a-9d2f-4e8b1c6a2f10",
+    "level": 5,
+    "baseStats": { "hp": 120, "mana": 20, "attack": 12, "defense": 8, "speed": 8 },
+    "stats": { "hp": 168, "mana": 28, "attack": 20, "defense": 16, "speed": 12 },
+    "resources": { "hp": 168, "mana": 28 }
+  }
+  ```
+
+  `baseStats` : statistiques de la classe au niveau 1 ; `stats` : statistiques au niveau actuel ; `resources` : PV et mana courants, égaux au maximum actuel (remis au maximum après chaque combat, sans persistance ni régénération au MVP). Pas de bonus d'équipement (ITEM-05) ni de critique (COMBAT-05).
+- **Niveau et expérience.** Aucune route, publique ou protégée, ne les modifie : seul le serveur attribue l'XP (STAT-04, fonction interne appelée plus tard par les récompenses). Un champ `level` ou `experience` envoyé à la création est refusé en 400 ; toute autre tentative reçoit 404 `ROUTE_NOT_FOUND`.
 - **Routes absentes.** Renommage et suppression (CHAR-06, CHAR-07) n'existent pas encore : 404 `ROUTE_NOT_FOUND` avec un jeton.
 
 ## 2. Requêtes
@@ -541,7 +555,7 @@ Une ressource à laquelle l'utilisateur n'a pas accès est traitée **exactement
 | `CLASS_NOT_FOUND` | 404 / 422 | `GET /api/v1/classes/:classId` (404) ; `POST /api/v1/characters` avec un `classId` inconnu (422) | CHAR-01, CHAR-03 |
 | `CHARACTER_LIMIT_REACHED` | 409 | `POST /api/v1/characters` (5 personnages déjà créés) | CHAR-03 |
 | `CHARACTER_NAME_TAKEN` | 409 | `POST /api/v1/characters` (nom déjà utilisé, quelle que soit la casse) | CHAR-03 |
-| `CHARACTER_NOT_FOUND` | 404 | `GET /api/v1/characters/:characterId` (inexistant ou d'un autre joueur) | CHAR-05 |
+| `CHARACTER_NOT_FOUND` | 404 | `GET /api/v1/characters/:characterId` et `/stats` (inexistant ou d'un autre joueur) | CHAR-05, STAT-02 |
 
 ## 7. Identifiants et autorisations
 
@@ -682,3 +696,4 @@ Toutes les actions passent par le même endpoint ; le type d'action est donné p
 | 2026-11-23 | Inscription `POST /api/v1/auth/register` (AUTH-01, AUTH-03, AUTH-04) ; suppression des routes `/api/v1/users` en attendant leurs permissions ; champ `role` dans la forme publique d'un compte (section 1.4) ; changement cassant admis (section 13) |
 | 2026-11-24 | Authentification (AUTH-02, AUTH-05 à AUTH-10) : connexion, déconnexion, jeton `Bearer`, routes `/api/v1/users` réintroduites avec permissions (sans POST ni PUT), `/users/me`, liste paginée ; codes `INVALID_CREDENTIALS`, `ACCOUNT_DISABLED`, `UNAUTHENTICATED`, `FORBIDDEN` ; routes publiques et protégées (sections 1.5 et 7) ; changement cassant admis (section 13) |
 | 2026-11-24 | Classes et personnages (CHAR-01 à CHAR-05) : `GET /api/v1/classes`, `POST` et `GET /api/v1/characters`, `GET /api/v1/characters/:characterId` ; champs réels d'un personnage (section 3.2) ; codes `CLASS_NOT_FOUND`, `CHARACTER_LIMIT_REACHED`, `CHARACTER_NAME_TAKEN`, `CHARACTER_NOT_FOUND` (section 1.6) ; changement additif (section 13) |
+| 2026-11-24 | Statistiques (STAT-01 à STAT-04) : `GET /api/v1/characters/:characterId/stats` et sa forme (section 1.6) ; aucune route d'écriture du niveau ni de l'XP ; changement additif (section 13) |

@@ -60,7 +60,7 @@ Exemple : un guerrier de niveau 5 a 120 + 12 × 4 = **168 PV** et 12 + 2 × 4 = 
 | 9 | 2 700 | 11 106 |
 
 - Un gain peut faire passer plusieurs niveaux. Exemple : niveau 1 avec 90 XP, gain de 300 XP (390 au total) ; le passage au niveau 2 consomme 100 XP (reste 290), le passage au niveau 3 en consomme 283 : **niveau 3 avec 7 XP**.
-- Au niveau 10, l'XP gagnée est ignorée et l'XP reste à 0.
+- Au niveau 10, l'XP gagnée est ignorée et l'XP reste à 0. Un gain qui fait atteindre le niveau 10 perd son reste : le personnage arrive au niveau 10 avec 0 XP.
 - Un passage de niveau recalcule les statistiques.
 
 ## 5. Combat
@@ -145,3 +145,4 @@ Les trois objets sont des matériaux empilables, sans effet au MVP.
 |---|---|
 | 2026-11-22 | Création (SET-03) |
 | 2026-11-23 | Statistique de critique retirée du MVP, reportée à COMBAT-05 (validation de DB-02) |
+| 2026-11-24 | Précision : reste d'XP perdu à l'arrivée au niveau 10 (décision D4 du lot L4) |

@@ -143,7 +143,9 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 | Session valide : non révoquée, non expirée, compte actif | — | Vérifié à chaque requête par le service d'authentification, avec son horloge (AUTH-07) |
 | 5 personnages au maximum par compte | — | `createWithinLimit` : transaction avec verrou sur la ligne du compte (`SELECT … FOR UPDATE`), comptage puis insertion ; seule méthode de création ; 409 `CHARACTER_LIMIT_REACHED` (CHAR-02, CHAR-03) |
 | Un personnage appartient au compte qui l'a créé | `user_id` obligatoire, cascade | Propriétaire tiré du jeton ; lecture par le seul propriétaire, sinon 404 (CHAR-03 à CHAR-05) |
-| Niveau 1 à 10, XP ≥ 0 | `CHECK` | Calcul de progression (STAT-03, STAT-04) |
+| Niveau 1 à 10, XP ≥ 0 | `CHECK` | Calcul de progression (STAT-03, STAT-04) : `MAX_LEVEL`, `applyExperienceGain` |
+| XP inférieure au seuil du niveau ; XP = 0 au niveau 10 | — (pas de `CHECK`, décision D6 du lot L4) | `assertValidProgression` avant tout calcul ; seule écriture : `updateProgression` (STAT-04) ; couvert par les tests |
+| Aucun gain d'XP perdu en cas d'attributions simultanées | — | `updateProgression` : transaction avec verrou sur la ligne du personnage (`SELECT … FOR UPDATE`), calcul puis écriture (STAT-04) |
 | Zone de départ attribuée à la création | `current_zone_id` obligatoire | Attribuer la zone de code `clearing` (`STARTING_ZONE_CODE`), jamais une valeur fournie par le client (DB-04, CHAR-03) |
 | Probabilité de butin entre 0 et 1 | `CHECK` 0 à 10 000 | Tirage aléatoire injectable (REWARD-01) |
 
@@ -153,6 +155,7 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 - **AUTH-01 (réalisé)** : migration `auth_user_fields` (`password_hash`, `role`).
 - **AUTH-05 à AUTH-10 (réalisés)** : migration `auth_sessions` : valeur `ADMIN` ajoutée à `user_role`, colonne `status`, table `sessions`. Les sessions expirées ou révoquées restent en base ; leur nettoyage est reporté.
 - **CHAR-01 à CHAR-05 (réalisés)** : aucune migration ; classes lues en lecture seule, personnages créés uniquement par `createWithinLimit`. Pas d'état supplémentaire du personnage au MVP.
+- **STAT-01 à STAT-04 (réalisés)** : aucune migration ; statistiques calculées à la lecture, jamais stockées ; niveau et XP écrits uniquement par `updateProgression`.
 - **WORLD-01 à 03, ITEM-01, REWARD-01** : les tables existent et sont remplies par le seed. Ces tickets ajoutent repositories, services et endpoints, et d'éventuelles colonnes par de nouvelles migrations.
 - **COMBAT-01, WORLD-07, ITEM-02** : nouvelles tables (combats, instances, inventaire) par de nouvelles migrations.
 
@@ -165,3 +168,4 @@ Règle générale : les données de référence utilisées ne sont jamais suppri
 | 2026-11-23 | `password_hash` et `role` ajoutés à `users` (AUTH-01) |
 | 2026-11-24 | Rôle `ADMIN`, statut des comptes et table `sessions` (AUTH-05 à AUTH-10) |
 | 2026-11-24 | Règles de propriété et de création des personnages (CHAR-01 à CHAR-05), sans migration |
+| 2026-11-24 | Invariants de progression et attribution d'XP sous verrou (STAT-01 à STAT-04), sans migration |

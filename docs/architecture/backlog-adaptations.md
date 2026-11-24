@@ -38,11 +38,15 @@ Le backlog de référence (`Backlog_API_Mmorpg.md`) se trouve à la racine du d�
 | AUTH-02 | Validé (routes `/users` réintroduites avec permissions ; partiel en `4e37896`) | `5f5256e` |
 | AUTH-09 | Validé (`/users/me`) | `5f5256e` |
 | AUTH-10 | Validé (`POST /api/v1/auth/logout`) | `5f5256e` |
-| CHAR-02 | Réalisé (règles du nom, limite atomique, propriété) | — |
-| CHAR-01 | Réalisé (`GET /api/v1/classes`, détail) | — |
-| CHAR-03 | Réalisé (`POST /api/v1/characters`) | — |
-| CHAR-04 | Réalisé (`GET /api/v1/characters`) | — |
-| CHAR-05 | Réalisé (`GET /api/v1/characters/:characterId`) | — |
+| CHAR-02 | Validé (règles du nom, limite atomique, propriété) | `af227b0` |
+| CHAR-01 | Validé (`GET /api/v1/classes`, détail) | `af227b0` |
+| CHAR-03 | Validé (`POST /api/v1/characters`) | `af227b0` |
+| CHAR-04 | Validé (`GET /api/v1/characters`) | `af227b0` |
+| CHAR-05 | Validé (`GET /api/v1/characters/:characterId`) | `af227b0` |
+| STAT-01 | Réalisé (calcul pur des statistiques, sans bonus d'équipement) | — |
+| STAT-03 | Réalisé (courbe d'XP, passages de niveaux) | — |
+| STAT-02 | Réalisé (`GET /api/v1/characters/:characterId/stats`) | — |
+| STAT-04 | Réalisé (attribution d'XP interne, sous verrou) | — |
 
 ## Ordre de réalisation
 
@@ -974,6 +978,66 @@ Précisions du propriétaire :
   - correspondance Zod/SQL sur 19 noms ;
   - cascade ;
   - parcours HTTP : inscription, connexion, classes, création dans la vraie zone de départ, 409 nom, **7 requêtes simultanées → 5 créations et 2 × 409**, liste, détail, suppression du compte.
+
+## Statistiques et progression (lot L4 : STAT-01 à STAT-04)
+
+Ordre de réalisation : STAT-01 → STAT-03 → STAT-02 → STAT-04. Aucune migration : `level` et `experience` existaient avec leurs contraintes (DB-02).
+
+### Décisions validées
+
+| # | Décision |
+|---|---|
+| D1 | Aucun bonus d'équipement : le critère « bonus cumulés » est reporté à ITEM-05, sans règle de cumul inventée |
+| D2 | Statistiques dérivées = statistiques au niveau actuel ; pas de critique (COMBAT-05) |
+| D3 | Réponse `{ characterId, level, baseStats, stats, resources }` ; ressources = maximum actuel, ni persistance ni régénération |
+| D4 | Niveau 10 : gains ignorés, XP 0 ; un reste à l'arrivée au niveau 10 est perdu (précision ajoutée à `rules.md` §4) |
+| D5 | Gain : entier sûr ≥ 1 (`Number.isSafeInteger`) ; sinon `RangeError`, erreur interne (500) |
+| D6 | Pas de `CHECK` « niveau 10 → XP 0 » : invariant garanti par le service et les tests |
+| D7 | Attribution dans sa propre transaction ; calcul pur réutilisable par REWARD-02 |
+| D8 | Pas d'`experienceToNextLevel` |
+
+### Mise en œuvre
+
+- **STAT-01** (`src/services/stats.ts`) : `statsAtLevel(classe, niveau)` = base + gain × (niveau − 1), pur et déterministe ; niveau hors de 1 à `MAX_LEVEL` → `RangeError`.
+- **STAT-03** (`src/services/experience.ts`) : `experienceRequiredForLevel(n)` pour n de 1 à 9 (`RangeError` sinon, niveau 10 compris) ; `applyExperienceGain` gère les passages multiples et le niveau maximal ; `assertValidProgression` refuse une progression incohérente au lieu de la corriger.
+- **STAT-02** : `characterService.getStats`, même règle de propriété que le détail (404 `CHARACTER_NOT_FOUND`, sans exception administrateur) ; route `GET /api/v1/characters/:characterId/stats`.
+- **STAT-04** (`src/services/progression.service.ts`) : `grantExperience(characterId, amount)`, sans route. `CharacterRepository.updateProgression(id, compute)` : transaction, verrou `SELECT … FOR UPDATE` sur la ligne du personnage, calcul pur, écriture du niveau et de l'XP. Une erreur du calcul ou de l'écriture annule tout et libère le verrou.
+
+### Adaptations
+
+| Élément | Adaptation | Raison | Reprise |
+|---|---|---|---|
+| STAT-01, « bonus cumulés » | Non testé, aucun bonus | Aucune règle d'équipement (D1) | ITEM-05 |
+| STAT-04, mise à jour des statistiques au passage de niveau | Sans objet | Statistiques calculées à la lecture | — |
+| `grantExperience` sur un personnage inexistant | 404 `CHARACTER_NOT_FOUND` | Même code que la lecture ; l'appelant (REWARD-02) décidera | REWARD-02 |
+| Service de progression | Non assemblé dans `server.ts` | Aucun appelant avant REWARD-02 | REWARD-02 |
+| `CharacterProgression` | Type partagé (`src/types/character.ts`) | Le repository ne dépend pas des services | — |
+| Postman | Aucune requête ajoutée | Collections prévues par DOC-01 | DOC-01 |
+
+### Fichiers créés ou modifiés
+
+| Fichier | Rôle |
+|---|---|
+| `src/config/gameplay.ts` | `MAX_LEVEL`, `XP_CURVE_BASE`, `XP_CURVE_EXPONENT` |
+| `src/services/stats.ts`, `src/services/experience.ts` | Calculs purs (STAT-01, STAT-03) |
+| `src/services/progression.service.ts` | Attribution d'XP (STAT-04) |
+| `src/services/character.service.ts`, `src/controllers/character.dto.ts`, `src/controllers/character.controller.ts`, `src/routes/character.routes.ts` | Statistiques par HTTP (STAT-02) |
+| `src/repositories/character.repository.ts`, `src/types/character.ts` | `updateProgression`, types |
+| `tests/helpers/in-memory-character-repository.ts`, `tests/helpers/character-repository-contract.ts` | Équivalent en mémoire et contrat |
+
+### Tests : 604 sans base (`npm test`), 141 avec base (`npm run test:db`)
+
+- **Sans base :**
+  - statistiques des trois classes aux niveaux 1, 5 et 10, exemple de `rules.md`, gain exact par niveau, niveaux invalides ;
+  - courbe d'XP : les 9 valeurs et les cumuls de `rules.md`, niveau 10 et niveaux invalides refusés ; seuil exact, un point en dessous, dépassement, exemple 90 + 300, passages multiples, arrivée au niveau 10 avec reste perdu, gains ignorés au niveau 10, plus grand entier sûr ; gains et progressions invalides ;
+  - service : persistance, gain invalide sans écriture, personnage inconnu, progression incohérente ; statistiques après gains, 404 identiques ;
+  - contrat `updateProgression` (mémoire et Prisma) ;
+  - HTTP : forme exacte aux niveaux 1, 3, 5 et 10, 404 identiques, 401, 400 ; 10 tentatives d'écriture du niveau ou de l'XP → 404 ou 400, personnage inchangé.
+- **Avec base :**
+  - **20 attributions simultanées de 60 XP → niveau 4 avec 297 XP**, identique au calcul séquentiel ; montants mélangés ; dépassement simultané du niveau 10 ;
+  - **verrou réellement pris** : une attribution attend la transaction qui tient la ligne ;
+  - **panne injectée après le verrou et le calcul → rien n'est écrit, verrou libéré** ; erreur du calcul → annulation ;
+  - parcours HTTP : inscription, création, XP attribuée par le serveur, statistiques du voleur aux niveaux 1, 5 et 10.
 
 ## Décisions de fonctionnement
 

@@ -1,6 +1,6 @@
 import { STARTING_ZONE_CODE } from '../config/gameplay'
 import type { PrismaClient } from '../generated/prisma/client'
-import type { Character, NewCharacter } from '../types/character'
+import type { Character, CharacterProgression, NewCharacter } from '../types/character'
 import {
     isPrismaError,
     LimitReachedError,
@@ -19,6 +19,7 @@ import {
  *
  * La création n'existe que sous une forme : createWithinLimit, qui respecte la limite de personnages par compte
  * de façon atomique. Aucune autre méthode d'écriture ne permet de la contourner.
+ * Le niveau et l'XP ne s'écrivent que par updateProgression (STAT-04), sous verrou.
  */
 export interface CharacterRepository {
     /**
@@ -33,6 +34,23 @@ export interface CharacterRepository {
     /** Personnages d'un utilisateur, du plus ancien au plus récent (createdAt, puis id). */
     findAllByUserId(userId: string): Promise<Character[]>
     countByUserId(userId: string): Promise<number>
+    /**
+     * Modifie le niveau et l'XP d'un personnage dans une seule transaction (STAT-04) : verrou sur sa ligne
+     * (SELECT … FOR UPDATE), lecture de la progression validée, calcul par `compute` (fonction pure fournie par le
+     * service), puis écriture. Deux modifications simultanées d'un même personnage s'exécutent l'une après l'autre :
+     * aucun gain n'est perdu. Une erreur de `compute` ou de l'écriture annule tout et libère le verrou.
+     * Personnage inexistant : undefined, sans appeler `compute`.
+     */
+    updateProgression<T extends CharacterProgression>(
+        id: string,
+        compute: (current: CharacterProgression) => T
+    ): Promise<ProgressionUpdate<T> | undefined>
+}
+
+/** Résultat d'updateProgression : le personnage enregistré et le résultat complet du calcul. */
+export interface ProgressionUpdate<T extends CharacterProgression> {
+    character: Character
+    result: T
 }
 
 // Colonnes lues : les champs du type Character ; normalized_name reste interne à la base.
@@ -103,6 +121,25 @@ export function createPrismaCharacterRepository(prisma: PrismaClient): Character
         findAllByUserId: (userId) =>
             prisma.character.findMany({ where: { userId }, select: CHARACTER_SELECT, orderBy: [...CHARACTER_ORDER] }),
 
-        countByUserId: (userId) => prisma.character.count({ where: { userId } })
+        countByUserId: (userId) => prisma.character.count({ where: { userId } }),
+
+        updateProgression(id, compute) {
+            return prisma.$transaction(async (tx) => {
+                // Verrou sur la ligne du personnage jusqu'à la fin de la transaction : une attribution concurrente
+                // attend ici, puis lit la progression déjà validée.
+                const rows = await tx.$queryRaw<CharacterProgression[]>`SELECT level, experience FROM characters WHERE id = ${id}::uuid FOR UPDATE`
+                const current = rows[0]
+                if (!current) {
+                    return undefined
+                }
+                const result = compute({ level: current.level, experience: current.experience })
+                const character = await tx.character.update({
+                    where: { id },
+                    data: { level: result.level, experience: result.experience },
+                    select: CHARACTER_SELECT
+                })
+                return { character, result }
+            })
+        }
     }
 }
